@@ -61,38 +61,20 @@ final class TranslationController {
     ) {
         requestQueue.async { [weak self] in
             guard let self else { return }
-            self.ensureApiKey { result in
-                switch result {
-                case .failure(let error):
-                    self.dispatchResult(.failure(error), completion: completion)
-                case .success(let apiKey):
-                    self.performTranslation(
-                        apiKey: apiKey,
-                        fragment: fragment,
-                        context: context,
-                        targetLanguage: targetLanguage,
-                        completion: completion
-                    )
+            self.requestApiKeyIfNeeded { [weak self] success in
+                guard let self else { return }
+                guard success, let apiKey = self.apiKey ?? EnvLoader.loadOpenAIKey() else {
+                    self.dispatchResult(.failure(TranslationError.missingApiKey), completion: completion)
+                    return
                 }
+                self.performTranslation(
+                    apiKey: apiKey,
+                    fragment: fragment,
+                    context: context,
+                    targetLanguage: targetLanguage,
+                    completion: completion
+                )
             }
-        }
-    }
-
-    private func ensureApiKey(completion: @escaping (Result<String, Error>) -> Void) {
-        if let apiKey = apiKey ?? EnvLoader.loadOpenAIKey() {
-            self.apiKey = apiKey
-            completion(.success(apiKey))
-            return
-        }
-
-        promptForApiKey { [weak self] success in
-            guard let self else { return }
-            guard success, let apiKey = self.apiKey ?? EnvLoader.loadOpenAIKey() else {
-                self.alertMissingTokenAndQuit()
-                completion(.failure(TranslationError.missingApiKey))
-                return
-            }
-            completion(.success(apiKey))
         }
     }
 

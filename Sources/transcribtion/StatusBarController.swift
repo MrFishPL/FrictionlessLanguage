@@ -11,9 +11,9 @@ final class StatusBarController: NSObject {
     private let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
     private weak var panel: NSPanel?
     private let transcription: TranscriptionController
-    private let translator: TranslationController?
+    private let translator: TranslationController
 
-    init(panel: NSPanel, transcription: TranscriptionController, translator: TranslationController?) {
+    init(panel: NSPanel, transcription: TranscriptionController, translator: TranslationController) {
         self.panel = panel
         self.transcription = transcription
         self.translator = translator
@@ -90,7 +90,7 @@ final class StatusBarController: NSObject {
     }
 
     @objc private func setOpenAIToken() {
-        translator?.promptForApiKey { [weak self] _ in
+        translator.promptForApiKey { [weak self] _ in
             self?.updateTokenItems()
         }
     }

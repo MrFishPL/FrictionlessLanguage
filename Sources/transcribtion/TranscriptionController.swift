@@ -31,27 +31,11 @@ final class TranscriptionController {
 
     func resumeListening() {
         guard !isListening else { return }
-        guard let apiKey = apiKey ?? EnvLoader.loadApiKey() else {
-            presentTokenPrompt { [weak self] token in
-                guard let self else { return }
-                guard let token, !token.isEmpty else {
-                    self.logError("Missing ELEVENLABS_API_KEY.")
-                    self.alertMissingTokenAndQuit()
-                    return
-                }
-                EnvLoader.saveApiKey(token)
-                self.apiKey = token
-                self.resumeListening()
-            }
-            return
+        requestApiKeyIfNeeded { [weak self] success in
+            guard let self else { return }
+            guard success, let apiKey = self.apiKey ?? EnvLoader.loadApiKey() else { return }
+            self.startSession(apiKey: apiKey)
         }
-
-        didShowAuthError = false
-        self.apiKey = apiKey
-        self.isListening = true
-        self.isSessionReady = false
-        self.connectWebSocket(apiKey: apiKey)
-        self.startAudioCapture()
     }
 
     func requestApiKeyIfNeeded(completion: @escaping (Bool) -> Void) {
@@ -72,6 +56,15 @@ final class TranscriptionController {
             self.apiKey = token
             completion(true)
         }
+    }
+
+    private func startSession(apiKey: String) {
+        didShowAuthError = false
+        self.apiKey = apiKey
+        self.isListening = true
+        self.isSessionReady = false
+        connectWebSocket(apiKey: apiKey)
+        startAudioCapture()
     }
 
     func stopListening() {
