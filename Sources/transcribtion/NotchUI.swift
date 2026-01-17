@@ -29,12 +29,6 @@ final class TransparentScrollView: NSScrollView {
     }
 }
 
-final class PointerButton: NSButton {
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
-}
-
 final class NotchView: NSView {
     static let markerToken = "[tab]"
     private let maskLayer = CAShapeLayer()
@@ -56,8 +50,8 @@ final class NotchView: NSView {
     private var isTranslationMode = false
     private var savedTranscriptionText: String = ""
     private var isSaved = false
-    private let saveButton = PointerButton(frame: .zero)
-    private let closeButton = PointerButton(frame: .zero)
+    private let saveButton = NSButton(frame: .zero)
+    private let closeButton = NSButton(frame: .zero)
     private let translationTextColor = NSColor.systemYellow
 
     override init(frame frameRect: NSRect) {
@@ -253,7 +247,6 @@ final class NotchView: NSView {
         selectionAnchorRange = nil
         selectedRange = nil
         applyHighlight()
-        NSCursor.arrow.set()
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -314,13 +307,6 @@ final class NotchView: NSView {
         if newRange != hoveredWordRange {
             hoveredWordRange = newRange
             applyWordHighlight()
-        }
-
-        // Update cursor based on whether we're over a word
-        if hoveredWordRange != nil {
-            NSCursor.iBeam.set()
-        } else {
-            NSCursor.arrow.set()
         }
     }
 
