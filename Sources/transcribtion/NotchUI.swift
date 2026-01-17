@@ -53,6 +53,7 @@ final class NotchView: NSView {
     private let saveButton = NSButton(frame: .zero)
     private let closeButton = NSButton(frame: .zero)
     private let translationTextColor = NSColor.systemYellow
+    var translationHandler: ((String, String, @escaping (Result<String, Error>) -> Void) -> Void)?
 
     override init(frame frameRect: NSRect) {
         textView = NSTextView(frame: .zero)
@@ -150,7 +151,7 @@ final class NotchView: NSView {
         saveButton.contentTintColor = isSaved ? .systemBlue : .white
     }
 
-    private func enterTranslationMode() {
+    private func enterTranslationMode(selectedText: String) {
         guard !isTranslationMode else { return }
         isTranslationMode = true
         isSaved = false
@@ -163,10 +164,8 @@ final class NotchView: NSView {
         closeButton.isHidden = false
         saveButton.contentTintColor = .white
 
-        // Show placeholder translation text in yellow
-        let loremIpsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
         let attributed = NSMutableAttributedString(
-            string: loremIpsum,
+            string: "Translating...",
             attributes: [
                 .font: font,
                 .foregroundColor: translationTextColor,
@@ -174,6 +173,40 @@ final class NotchView: NSView {
         )
         textView.textStorage?.setAttributedString(attributed)
         updateTextLayout()
+
+        guard let translationHandler else {
+            let message = NSMutableAttributedString(
+                string: "Translation unavailable.",
+                attributes: [
+                    .font: font,
+                    .foregroundColor: translationTextColor,
+                ]
+            )
+            textView.textStorage?.setAttributedString(message)
+            updateTextLayout()
+            return
+        }
+
+        translationHandler(selectedText, savedTranscriptionText) { [weak self] result in
+            guard let self, self.isTranslationMode else { return }
+            let translationText: String
+            switch result {
+            case .success(let text):
+                translationText = text
+            case .failure(let error):
+                translationText = "Translation failed: \(error.localizedDescription)"
+            }
+
+            let translated = NSMutableAttributedString(
+                string: translationText,
+                attributes: [
+                    .font: self.font,
+                    .foregroundColor: self.translationTextColor,
+                ]
+            )
+            self.textView.textStorage?.setAttributedString(translated)
+            self.updateTextLayout()
+        }
     }
 
     private func exitTranslationMode() {
@@ -287,8 +320,8 @@ final class NotchView: NSView {
         isSelecting = false
 
         // If we have a selection and not in translation mode, enter it
-        if selectedRange != nil && !isTranslationMode {
-            enterTranslationMode()
+        if selectedRange != nil && !isTranslationMode, let selection = getSelectedText() {
+            enterTranslationMode(selectedText: selection)
         }
     }
 

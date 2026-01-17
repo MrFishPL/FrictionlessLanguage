@@ -19,9 +19,19 @@ struct CaptionLayerApp {
         panel.contentView = notchView
         panel.makeKeyAndOrderFront(nil)
 
+        let translator = TranslationController()
+        notchView.translationHandler = { fragment, context, completion in
+            translator.translate(
+                fragment: fragment,
+                context: context,
+                targetLanguage: AppConfig.targetLanguage,
+                completion: completion
+            )
+        }
+
         let transcription = TranscriptionController(notchView: notchView)
         transcription.start()
-        let statusBar = StatusBarController(panel: panel, transcription: transcription)
+        let statusBar = StatusBarController(panel: panel, transcription: transcription, translator: translator)
         _ = statusBar
 
         app.run()
