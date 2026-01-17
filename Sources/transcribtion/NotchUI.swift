@@ -45,6 +45,10 @@ final class NotchView: NSView {
     private var isSelecting = false
     private var selectionAnchorRange: NSRange?
     private var selectedRange: NSRange?
+    private var isDraggingPanel = false
+    private var dragStartLocation: NSPoint?
+    private var dragStartOrigin: NSPoint?
+    private var shouldResumePlayback = false
 
     // Translation mode state
     private var isTranslationMode = false
@@ -262,14 +266,20 @@ final class NotchView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        if isDraggingPanel { return }
         isHovering = true
         sendPlayPauseKey()
+        shouldResumePlayback = true
         updateHoveredWord(with: event)
     }
 
     override func mouseExited(with event: NSEvent) {
+        if isDraggingPanel { return }
         isHovering = false
-        sendPlayPauseKey()
+        if shouldResumePlayback {
+            sendPlayPauseKey()
+            shouldResumePlayback = false
+        }
 
         if isTranslationMode {
             exitTranslationMode()
@@ -289,20 +299,30 @@ final class NotchView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        // Ignore clicks on text area when in translation mode (buttons handle themselves)
-        if isTranslationMode { return }
-
         let point = convertEventToTextViewPoint(event)
-        if let wordRange = wordRangeAtPoint(point) {
-            isSelecting = true
-            selectionAnchorRange = wordRange
-            selectedRange = wordRange
-            hoveredWordRange = nil
-            applyHighlight()
+        if isPointInsideTextBounds(point) {
+            if isTranslationMode { return }
+            if let wordRange = wordRangeAtPoint(point) {
+                isSelecting = true
+                selectionAnchorRange = wordRange
+                selectedRange = wordRange
+                hoveredWordRange = nil
+                applyHighlight()
+            }
+        } else {
+            if event.clickCount == 2 {
+                centerPanelHorizontally()
+                return
+            }
+            startPanelDrag(with: event)
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if isDraggingPanel {
+            updatePanelDrag(with: event)
+            return
+        }
         if isTranslationMode { return }
         guard isSelecting, let anchor = selectionAnchorRange else { return }
 
@@ -317,6 +337,14 @@ final class NotchView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if shouldResumePlayback, !isMouseInsidePanel(for: event) {
+            sendPlayPauseKey()
+            shouldResumePlayback = false
+        }
+        if isDraggingPanel {
+            endPanelDrag()
+            return
+        }
         isSelecting = false
 
         // If we have a selection and not in translation mode, enter it
@@ -403,6 +431,56 @@ final class NotchView: NSView {
         }
 
         return NSRange(location: start, length: end - start + 1)
+    }
+
+    private func isPointInsideTextBounds(_ point: NSPoint) -> Bool {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else { return false }
+
+        let textContainerOffset = CGPoint(
+            x: textView.textContainerInset.width,
+            y: textView.textContainerInset.height
+        )
+        let adjustedPoint = CGPoint(x: point.x - textContainerOffset.x, y: point.y - textContainerOffset.y)
+        let textBounds = layoutManager.usedRect(for: textContainer)
+        return textBounds.contains(adjustedPoint)
+    }
+
+    private func startPanelDrag(with event: NSEvent) {
+        guard let window else { return }
+        isDraggingPanel = true
+        dragStartLocation = NSEvent.mouseLocation
+        dragStartOrigin = window.frame.origin
+    }
+
+    private func updatePanelDrag(with event: NSEvent) {
+        guard let window,
+              let dragStartLocation,
+              let dragStartOrigin else { return }
+        let currentLocation = NSEvent.mouseLocation
+        let deltaX = currentLocation.x - dragStartLocation.x
+        let newOrigin = NSPoint(x: dragStartOrigin.x + deltaX, y: dragStartOrigin.y)
+        window.setFrameOrigin(newOrigin)
+    }
+
+    private func endPanelDrag() {
+        isDraggingPanel = false
+        dragStartLocation = nil
+        dragStartOrigin = nil
+    }
+
+    private func isMouseInsidePanel(for event: NSEvent) -> Bool {
+        guard let window else { return false }
+        let location = event.locationInWindow
+        return window.contentView?.bounds.contains(location) ?? false
+    }
+
+    private func centerPanelHorizontally() {
+        guard let window else { return }
+        let screenFrame = window.screen?.frame ?? NSScreen.main?.frame ?? window.frame
+        let frame = window.frame
+        let centeredX = screenFrame.midX - frame.width / 2
+        window.setFrameOrigin(NSPoint(x: centeredX, y: frame.origin.y))
     }
 
     private func applyWordHighlight() {
