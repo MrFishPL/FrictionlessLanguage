@@ -30,6 +30,9 @@ struct CaptionLayerApp {
         }
 
         let transcription = TranscriptionController(notchView: notchView)
+        notchView.hoverChangedHandler = { isHovering in
+            transcription.setUIUpdatesPaused(isHovering)
+        }
         let statusBar = StatusBarController(panel: panel, transcription: transcription, translator: translator)
         _ = statusBar
 

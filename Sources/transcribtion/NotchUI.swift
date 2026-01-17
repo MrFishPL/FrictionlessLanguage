@@ -49,6 +49,7 @@ final class NotchView: NSView {
     private var dragStartLocation: NSPoint?
     private var dragStartOrigin: NSPoint?
     private var shouldResumePlayback = false
+    var hoverChangedHandler: ((Bool) -> Void)?
 
     // Translation mode state
     private var isTranslationMode = false
@@ -270,6 +271,7 @@ final class NotchView: NSView {
         isHovering = true
         sendPlayPauseKey()
         shouldResumePlayback = true
+        hoverChangedHandler?(true)
         updateHoveredWord(with: event)
     }
 
@@ -280,6 +282,7 @@ final class NotchView: NSView {
             sendPlayPauseKey()
             shouldResumePlayback = false
         }
+        hoverChangedHandler?(false)
 
         if isTranslationMode {
             exitTranslationMode()

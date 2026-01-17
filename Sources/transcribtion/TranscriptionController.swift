@@ -17,6 +17,8 @@ final class TranscriptionController {
     private var isListening = false
     private var apiKey: String?
     private var didShowAuthError = false
+    private var uiUpdatesPaused = false
+    private var pendingDisplayText: String?
 
     private let targetSampleRate: Double = 16_000
     private let targetChannels: AVAudioChannelCount = 1
@@ -75,6 +77,14 @@ final class TranscriptionController {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         updateUI("Paused")
+    }
+
+    func setUIUpdatesPaused(_ paused: Bool) {
+        uiUpdatesPaused = paused
+        if !paused, let pending = pendingDisplayText {
+            pendingDisplayText = nil
+            updateUI(pending)
+        }
     }
 
     func clearTranscription() {
@@ -281,6 +291,10 @@ final class TranscriptionController {
     }
 
     private func updateUI(_ text: String) {
+        if uiUpdatesPaused {
+            pendingDisplayText = text
+            return
+        }
         DispatchQueue.main.async { [weak self] in
             self?.notchView.setText(text)
         }
