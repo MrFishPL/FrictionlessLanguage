@@ -30,10 +30,24 @@ struct CaptionLayerApp {
         }
 
         let transcription = TranscriptionController(notchView: notchView)
-        transcription.start()
         let statusBar = StatusBarController(panel: panel, transcription: transcription, translator: translator)
         _ = statusBar
 
+        requestKeysAndStart(transcription: transcription, translator: translator)
+
         app.run()
+    }
+
+    private static func requestKeysAndStart(
+        transcription: TranscriptionController,
+        translator: TranslationController
+    ) {
+        transcription.requestApiKeyIfNeeded { success in
+            guard success else { return }
+            translator.requestApiKeyIfNeeded { translatorSuccess in
+                guard translatorSuccess else { return }
+                transcription.start()
+            }
+        }
     }
 }

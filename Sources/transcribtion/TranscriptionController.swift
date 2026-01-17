@@ -54,6 +54,26 @@ final class TranscriptionController {
         self.startAudioCapture()
     }
 
+    func requestApiKeyIfNeeded(completion: @escaping (Bool) -> Void) {
+        if let apiKey = apiKey ?? EnvLoader.loadApiKey(), !apiKey.isEmpty {
+            self.apiKey = apiKey
+            completion(true)
+            return
+        }
+
+        presentTokenPrompt { [weak self] token in
+            guard let self else { return }
+            guard let token, !token.isEmpty else {
+                self.alertMissingTokenAndQuit()
+                completion(false)
+                return
+            }
+            EnvLoader.saveApiKey(token)
+            self.apiKey = token
+            completion(true)
+        }
+    }
+
     func stopListening() {
         guard isListening else { return }
         isListening = false

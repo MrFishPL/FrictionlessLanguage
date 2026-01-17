@@ -34,6 +34,25 @@ final class TranslationController {
         }
     }
 
+    func requestApiKeyIfNeeded(completion: @escaping (Bool) -> Void) {
+        if let apiKey = apiKey ?? EnvLoader.loadOpenAIKey(), !apiKey.isEmpty {
+            self.apiKey = apiKey
+            completion(true)
+            return
+        }
+
+        promptForApiKey { [weak self] success in
+            guard let self else { return }
+            guard success, let apiKey = self.apiKey ?? EnvLoader.loadOpenAIKey(), !apiKey.isEmpty else {
+                self.alertMissingTokenAndQuit()
+                completion(false)
+                return
+            }
+            self.apiKey = apiKey
+            completion(true)
+        }
+    }
+
     func translate(
         fragment: String,
         context: String,
