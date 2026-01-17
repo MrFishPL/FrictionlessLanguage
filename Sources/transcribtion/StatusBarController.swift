@@ -6,13 +6,17 @@ final class StatusBarController: NSObject {
     private let menu = NSMenu()
     private let toggleItem = NSMenuItem(title: "Hide Panel", action: #selector(togglePanel), keyEquivalent: "h")
     private let removeTokenItem = NSMenuItem(title: "Remove Token", action: #selector(removeToken), keyEquivalent: "")
+    private let setOpenAITokenItem = NSMenuItem(title: "Set OpenAI Token…", action: #selector(setOpenAIToken), keyEquivalent: "")
+    private let removeOpenAITokenItem = NSMenuItem(title: "Remove OpenAI Token", action: #selector(removeOpenAIToken), keyEquivalent: "")
     private let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
     private weak var panel: NSPanel?
     private let transcription: TranscriptionController
+    private let translator: TranslationController
 
-    init(panel: NSPanel, transcription: TranscriptionController) {
+    init(panel: NSPanel, transcription: TranscriptionController, translator: TranslationController) {
         self.panel = panel
         self.transcription = transcription
+        self.translator = translator
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
 
@@ -24,12 +28,16 @@ final class StatusBarController: NSObject {
 
         toggleItem.target = self
         removeTokenItem.target = self
+        setOpenAITokenItem.target = self
+        removeOpenAITokenItem.target = self
         quitItem.target = self
         menu.delegate = self
         menu.autoenablesItems = false
         menu.addItem(toggleItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(removeTokenItem)
+        menu.addItem(setOpenAITokenItem)
+        menu.addItem(removeOpenAITokenItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
         statusItem.menu = menu
@@ -62,6 +70,8 @@ final class StatusBarController: NSObject {
     private func updateTokenItems() {
         let hasToken = EnvLoader.loadApiKey() != nil
         removeTokenItem.isEnabled = hasToken
+        let hasOpenAIToken = EnvLoader.loadOpenAIKey() != nil
+        removeOpenAITokenItem.isEnabled = hasOpenAIToken
     }
 
     @objc private func removeToken() {
@@ -77,6 +87,18 @@ final class StatusBarController: NSObject {
         alert.addButton(withTitle: "Quit")
         alert.runModal()
         NSApplication.shared.terminate(nil)
+    }
+
+    @objc private func setOpenAIToken() {
+        translator.promptForApiKey { [weak self] _ in
+            self?.updateTokenItems()
+        }
+    }
+
+    @objc private func removeOpenAIToken() {
+        EnvLoader.removeOpenAIKey()
+        updateTokenItems()
+        alertBeforeQuit()
     }
 }
 

@@ -45,6 +45,20 @@ final class NotchView: NSView {
     private var isSelecting = false
     private var selectionAnchorRange: NSRange?
     private var selectedRange: NSRange?
+    private var isDraggingPanel = false
+    private var dragStartLocation: NSPoint?
+    private var dragStartOrigin: NSPoint?
+    private var shouldResumePlayback = false
+    var hoverChangedHandler: ((Bool) -> Void)?
+
+    // Translation mode state
+    private var isTranslationMode = false
+    private var savedTranscriptionText: String = ""
+    private var isSaved = false
+    private let saveButton = NSButton(frame: .zero)
+    private let closeButton = NSButton(frame: .zero)
+    private let translationTextColor = NSColor.systemYellow
+    var translationHandler: ((String, String, @escaping (Result<String, Error>) -> Void) -> Void)?
 
     override init(frame frameRect: NSRect) {
         textView = NSTextView(frame: .zero)
@@ -90,6 +104,140 @@ final class NotchView: NSView {
             scrollView.heightAnchor.constraint(equalToConstant: textHeight),
             scrollView.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: AppConfig.topDeadArea),
         ])
+
+        // Setup translation mode buttons (hidden by default)
+        setupTranslationButtons()
+    }
+
+    private func setupTranslationButtons() {
+        // Close button (X)
+        closeButton.bezelStyle = .inline
+        closeButton.isBordered = false
+        closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")
+        closeButton.contentTintColor = .white
+        closeButton.target = self
+        closeButton.action = #selector(closeTranslationMode)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.isHidden = true
+        addSubview(closeButton)
+
+        // Save button (bookmark)
+        saveButton.bezelStyle = .inline
+        saveButton.isBordered = false
+        saveButton.image = NSImage(systemSymbolName: "bookmark", accessibilityDescription: "Save")
+        saveButton.contentTintColor = .white
+        saveButton.target = self
+        saveButton.action = #selector(saveTranslation)
+        saveButton.translatesAutoresizingMaskIntoConstraints = false
+        saveButton.isHidden = true
+        addSubview(saveButton)
+
+        NSLayoutConstraint.activate([
+            // Close button - right corner in dead zone
+            closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            closeButton.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            closeButton.widthAnchor.constraint(equalToConstant: 20),
+            closeButton.heightAnchor.constraint(equalToConstant: 20),
+
+            // Save button - left of close button
+            saveButton.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -8),
+            saveButton.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            saveButton.widthAnchor.constraint(equalToConstant: 20),
+            saveButton.heightAnchor.constraint(equalToConstant: 20),
+        ])
+    }
+
+    @objc private func closeTranslationMode() {
+        exitTranslationMode()
+    }
+
+    @objc private func saveTranslation() {
+        isSaved.toggle()
+        saveButton.contentTintColor = isSaved ? .systemBlue : .white
+    }
+
+    private func enterTranslationMode(selectedText: String) {
+        guard !isTranslationMode else { return }
+        isTranslationMode = true
+        isSaved = false
+
+        // Save current transcription text
+        savedTranscriptionText = textView.string
+
+        // Show buttons
+        saveButton.isHidden = false
+        closeButton.isHidden = false
+        saveButton.contentTintColor = .white
+
+        let attributed = NSMutableAttributedString(
+            string: "Translating...",
+            attributes: [
+                .font: font,
+                .foregroundColor: translationTextColor,
+            ]
+        )
+        textView.textStorage?.setAttributedString(attributed)
+        updateTextLayout()
+
+        guard let translationHandler else {
+            let message = NSMutableAttributedString(
+                string: "Translation unavailable.",
+                attributes: [
+                    .font: font,
+                    .foregroundColor: translationTextColor,
+                ]
+            )
+            textView.textStorage?.setAttributedString(message)
+            updateTextLayout()
+            return
+        }
+
+        translationHandler(selectedText, savedTranscriptionText) { [weak self] result in
+            guard let self, self.isTranslationMode else { return }
+            let translationText: String
+            switch result {
+            case .success(let text):
+                translationText = text
+            case .failure(let error):
+                translationText = "Translation failed: \(error.localizedDescription)"
+            }
+
+            let translated = NSMutableAttributedString(
+                string: translationText,
+                attributes: [
+                    .font: self.font,
+                    .foregroundColor: self.translationTextColor,
+                ]
+            )
+            self.textView.textStorage?.setAttributedString(translated)
+            self.updateTextLayout()
+        }
+    }
+
+    private func exitTranslationMode() {
+        guard isTranslationMode else { return }
+        isTranslationMode = false
+        isSaved = false
+
+        // Hide buttons
+        saveButton.isHidden = true
+        closeButton.isHidden = true
+
+        // Clear selection and restore transcription
+        selectedRange = nil
+        selectionAnchorRange = nil
+        hoveredWordRange = nil
+
+        // Restore transcription text
+        let attributed = NSMutableAttributedString(
+            string: savedTranscriptionText,
+            attributes: [
+                .font: font,
+                .foregroundColor: defaultTextColor,
+            ]
+        )
+        textView.textStorage?.setAttributedString(attributed)
+        updateTextLayout()
     }
 
     required init?(coder: NSCoder) {
@@ -119,14 +267,27 @@ final class NotchView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        if isDraggingPanel { return }
         isHovering = true
         sendPlayPauseKey()
+        shouldResumePlayback = true
+        hoverChangedHandler?(true)
         updateHoveredWord(with: event)
     }
 
     override func mouseExited(with event: NSEvent) {
+        if isDraggingPanel { return }
         isHovering = false
-        sendPlayPauseKey()
+        if shouldResumePlayback {
+            sendPlayPauseKey()
+            shouldResumePlayback = false
+        }
+        hoverChangedHandler?(false)
+
+        if isTranslationMode {
+            exitTranslationMode()
+        }
+
         hoveredWordRange = nil
         isSelecting = false
         selectionAnchorRange = nil
@@ -135,23 +296,37 @@ final class NotchView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        if !isSelecting {
+        if !isSelecting && !isTranslationMode {
             updateHoveredWord(with: event)
         }
     }
 
     override func mouseDown(with event: NSEvent) {
         let point = convertEventToTextViewPoint(event)
-        if let wordRange = wordRangeAtPoint(point) {
-            isSelecting = true
-            selectionAnchorRange = wordRange
-            selectedRange = wordRange
-            hoveredWordRange = nil
-            applyHighlight()
+        if isPointInsideTextBounds(point) {
+            if isTranslationMode { return }
+            if let wordRange = wordRangeAtPoint(point) {
+                isSelecting = true
+                selectionAnchorRange = wordRange
+                selectedRange = wordRange
+                hoveredWordRange = nil
+                applyHighlight()
+            }
+        } else {
+            if event.clickCount == 2 {
+                centerPanelHorizontally()
+                return
+            }
+            startPanelDrag(with: event)
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if isDraggingPanel {
+            updatePanelDrag(with: event)
+            return
+        }
+        if isTranslationMode { return }
         guard isSelecting, let anchor = selectionAnchorRange else { return }
 
         let point = convertEventToTextViewPoint(event)
@@ -165,8 +340,20 @@ final class NotchView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if shouldResumePlayback, !isMouseInsidePanel(for: event) {
+            sendPlayPauseKey()
+            shouldResumePlayback = false
+        }
+        if isDraggingPanel {
+            endPanelDrag()
+            return
+        }
         isSelecting = false
-        // Selection stays visible
+
+        // If we have a selection and not in translation mode, enter it
+        if selectedRange != nil && !isTranslationMode, let selection = getSelectedText() {
+            enterTranslationMode(selectedText: selection)
+        }
     }
 
     private func convertEventToTextViewPoint(_ event: NSEvent) -> NSPoint {
@@ -249,6 +436,56 @@ final class NotchView: NSView {
         return NSRange(location: start, length: end - start + 1)
     }
 
+    private func isPointInsideTextBounds(_ point: NSPoint) -> Bool {
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else { return false }
+
+        let textContainerOffset = CGPoint(
+            x: textView.textContainerInset.width,
+            y: textView.textContainerInset.height
+        )
+        let adjustedPoint = CGPoint(x: point.x - textContainerOffset.x, y: point.y - textContainerOffset.y)
+        let textBounds = layoutManager.usedRect(for: textContainer)
+        return textBounds.contains(adjustedPoint)
+    }
+
+    private func startPanelDrag(with event: NSEvent) {
+        guard let window else { return }
+        isDraggingPanel = true
+        dragStartLocation = NSEvent.mouseLocation
+        dragStartOrigin = window.frame.origin
+    }
+
+    private func updatePanelDrag(with event: NSEvent) {
+        guard let window,
+              let dragStartLocation,
+              let dragStartOrigin else { return }
+        let currentLocation = NSEvent.mouseLocation
+        let deltaX = currentLocation.x - dragStartLocation.x
+        let newOrigin = NSPoint(x: dragStartOrigin.x + deltaX, y: dragStartOrigin.y)
+        window.setFrameOrigin(newOrigin)
+    }
+
+    private func endPanelDrag() {
+        isDraggingPanel = false
+        dragStartLocation = nil
+        dragStartOrigin = nil
+    }
+
+    private func isMouseInsidePanel(for event: NSEvent) -> Bool {
+        guard let window else { return false }
+        let location = event.locationInWindow
+        return window.contentView?.bounds.contains(location) ?? false
+    }
+
+    private func centerPanelHorizontally() {
+        guard let window else { return }
+        let screenFrame = window.screen?.frame ?? NSScreen.main?.frame ?? window.frame
+        let frame = window.frame
+        let centeredX = screenFrame.midX - frame.width / 2
+        window.setFrameOrigin(NSPoint(x: centeredX, y: frame.origin.y))
+    }
+
     private func applyWordHighlight() {
         applyHighlight()
     }
@@ -301,6 +538,12 @@ final class NotchView: NSView {
     }
 
     func setText(_ text: String) {
+        // Don't update text while in translation mode
+        if isTranslationMode {
+            savedTranscriptionText = text
+            return
+        }
+
         hoveredWordRange = nil
         selectedRange = nil
         selectionAnchorRange = nil

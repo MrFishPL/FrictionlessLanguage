@@ -17,6 +17,8 @@ final class TranscriptionController {
     private var isListening = false
     private var apiKey: String?
     private var didShowAuthError = false
+    private var uiUpdatesPaused = false
+    private var pendingDisplayText: String?
 
     private let targetSampleRate: Double = 16_000
     private let targetChannels: AVAudioChannelCount = 1
@@ -31,27 +33,40 @@ final class TranscriptionController {
 
     func resumeListening() {
         guard !isListening else { return }
-        guard let apiKey = apiKey ?? EnvLoader.loadApiKey() else {
-            presentTokenPrompt { [weak self] token in
-                guard let self else { return }
-                guard let token, !token.isEmpty else {
-                    self.logError("Missing ELEVENLABS_API_KEY.")
-                    self.alertMissingTokenAndQuit()
-                    return
-                }
-                EnvLoader.saveApiKey(token)
-                self.apiKey = token
-                self.resumeListening()
-            }
+        requestApiKeyIfNeeded { [weak self] success in
+            guard let self else { return }
+            guard success, let apiKey = self.apiKey ?? EnvLoader.loadApiKey() else { return }
+            self.startSession(apiKey: apiKey)
+        }
+    }
+
+    func requestApiKeyIfNeeded(completion: @escaping (Bool) -> Void) {
+        if let apiKey = apiKey ?? EnvLoader.loadApiKey(), !apiKey.isEmpty {
+            self.apiKey = apiKey
+            completion(true)
             return
         }
 
+        presentTokenPrompt { [weak self] token in
+            guard let self else { return }
+            guard let token, !token.isEmpty else {
+                self.alertMissingTokenAndQuit()
+                completion(false)
+                return
+            }
+            EnvLoader.saveApiKey(token)
+            self.apiKey = token
+            completion(true)
+        }
+    }
+
+    private func startSession(apiKey: String) {
         didShowAuthError = false
         self.apiKey = apiKey
         self.isListening = true
         self.isSessionReady = false
-        self.connectWebSocket(apiKey: apiKey)
-        self.startAudioCapture()
+        connectWebSocket(apiKey: apiKey)
+        startAudioCapture()
     }
 
     func stopListening() {
@@ -62,6 +77,14 @@ final class TranscriptionController {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         updateUI("Paused")
+    }
+
+    func setUIUpdatesPaused(_ paused: Bool) {
+        uiUpdatesPaused = paused
+        if !paused, let pending = pendingDisplayText {
+            pendingDisplayText = nil
+            updateUI(pending)
+        }
     }
 
     func clearTranscription() {
@@ -268,6 +291,10 @@ final class TranscriptionController {
     }
 
     private func updateUI(_ text: String) {
+        if uiUpdatesPaused {
+            pendingDisplayText = text
+            return
+        }
         DispatchQueue.main.async { [weak self] in
             self?.notchView.setText(text)
         }
