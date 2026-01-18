@@ -20,10 +20,11 @@ struct FlungusApp {
 
         let translator = TranslationController()
         notchView.translationHandler = { fragment, context, completion in
+            let targetLanguage = EnvLoader.loadTargetLanguage() ?? AppConfig.defaultTargetLanguage
             translator.translate(
                 fragment: fragment,
                 context: context,
-                targetLanguage: AppConfig.targetLanguage,
+                targetLanguage: targetLanguage,
                 completion: completion
             )
         }

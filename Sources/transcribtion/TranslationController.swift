@@ -28,7 +28,7 @@ final class TranslationController {
     func translate(
         fragment: String,
         context: String,
-        targetLanguage: Language,
+        targetLanguage: String,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
         requestQueue.async { [weak self] in
@@ -54,7 +54,7 @@ final class TranslationController {
         apiKey: String,
         fragment: String,
         context: String,
-        targetLanguage: Language,
+        targetLanguage: String,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
         guard let url = URL(string: "https://api.openai.com/v1/responses") else {
@@ -63,7 +63,7 @@ final class TranslationController {
         }
 
         let prompt = """
-What this fragment of text or a word "\(fragment)" means in context of this text "\(context)" in language "\(targetLanguage.rawValue)" - do translation. If the selection is a single word, translate only that single word. Output only the translated phrase without quotes, comments, or extra characters.
+What this fragment of text or a word "\(fragment)" means in context of this text "\(context)" in language "\(targetLanguage)" - do translation. If the selection is a single word, translate only that single word. Output only the translated phrase without quotes, comments, or extra characters.
 """
 
         let schema: [String: Any] = [

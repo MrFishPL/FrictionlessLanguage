@@ -5,7 +5,8 @@ struct ApiKeyRequirements: OptionSet {
 
     static let elevenLabs = ApiKeyRequirements(rawValue: 1 << 0)
     static let openAI = ApiKeyRequirements(rawValue: 1 << 1)
-    static let all: ApiKeyRequirements = [.elevenLabs, .openAI]
+    static let language = ApiKeyRequirements(rawValue: 1 << 2)
+    static let all: ApiKeyRequirements = [.elevenLabs, .openAI, .language]
 
     var isEmpty: Bool { rawValue == 0 }
 }
@@ -49,6 +50,9 @@ final class ApiKeySetupCoordinator {
         if required.contains(.openAI), EnvLoader.loadOpenAIKey() == nil {
             missing.insert(.openAI)
         }
+        if required.contains(.language), EnvLoader.loadTargetLanguage() == nil {
+            missing.insert(.language)
+        }
         return missing
     }
 }
@@ -61,6 +65,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
     private let openAIField = NSSecureTextField()
     private let saveButton = PaddedButton(title: "Save and Continue", target: nil, action: #selector(saveAndContinue))
     private let quitButton = PaddedButton(title: "Quit", target: nil, action: #selector(quitApp))
+    private let languageField = NSTextField()
     private let statusLabel = NSTextField(labelWithString: "")
     private let statusSpinner = NSProgressIndicator()
     private var didFinish = false
@@ -71,7 +76,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
         self.requirements = requirements
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 380),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -149,7 +154,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
         if requirements.contains(.elevenLabs) {
             let block = makeFieldBlock(
                 title: "ElevenLabs API Key",
-                placeholder: "ELEVENLABS_API_KEY",
+                placeholder: "",
                 field: elevenLabsField
             )
             stack.addArrangedSubview(block)
@@ -165,6 +170,27 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
             )
             stack.addArrangedSubview(block)
             block.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            lastFieldBlock = block
+        }
+
+        var languageBlock: NSView?
+        var languageNote: NSTextField?
+        if requirements.contains(.language) {
+            languageField.stringValue = EnvLoader.loadTargetLanguage() ?? ""
+            let block = makeFieldBlock(
+                title: "Target Language",
+                placeholder: "e.g. Brazilian Portuguese, Japanese, Modern Greek",
+                field: languageField
+            )
+            let note = NSTextField(labelWithString: "This text is sent to the LLM as-is.")
+            note.font = palette.bodyFont
+            note.textColor = palette.subtitleColor
+
+            stack.addArrangedSubview(block)
+            stack.addArrangedSubview(note)
+            block.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            languageBlock = block
+            languageNote = note
             lastFieldBlock = block
         }
 
@@ -184,6 +210,10 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
         if let lastFieldBlock {
             stack.setCustomSpacing(16, after: lastFieldBlock)
         }
+        if let languageBlock, let languageNote {
+            stack.setCustomSpacing(8, after: languageBlock)
+            stack.setCustomSpacing(22, after: languageNote)
+        }
         stack.addArrangedSubview(buttonRow)
 
         card.addSubview(stack)
@@ -192,7 +222,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
             card.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 24),
             card.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -24),
             card.centerYAnchor.constraint(equalTo: background.centerYAnchor),
-            card.heightAnchor.constraint(greaterThanOrEqualToConstant: 260),
+            card.heightAnchor.constraint(greaterThanOrEqualToConstant: 340),
 
             stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 28),
             stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -28),
@@ -210,13 +240,12 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
         }
     }
 
-    private func makeFieldBlock(title: String, placeholder: String, field: NSSecureTextField) -> NSView {
+    private func makeFieldBlock(title: String, placeholder: String, field: NSTextField) -> NSView {
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = palette.labelFont
         titleLabel.textColor = palette.labelColor
 
-        field.placeholderString = ""
-        field.stringValue = ""
+        field.placeholderString = placeholder
         field.font = palette.fieldFont
         field.textColor = palette.fieldText
         field.drawsBackground = false
@@ -268,11 +297,15 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
     private func updateSaveButtonState() {
         let needsElevenLabs = requirements.contains(.elevenLabs)
         let needsOpenAI = requirements.contains(.openAI)
+        let needsLanguage = requirements.contains(.language)
 
         let hasElevenLabs = !elevenLabsField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasOpenAI = !openAIField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasLanguage = !languageField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
-        saveButton.isEnabled = (!needsElevenLabs || hasElevenLabs) && (!needsOpenAI || hasOpenAI)
+        saveButton.isEnabled = (!needsElevenLabs || hasElevenLabs)
+            && (!needsOpenAI || hasOpenAI)
+            && (!needsLanguage || hasLanguage)
         applyButtonStyles()
     }
 
@@ -284,6 +317,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
     @objc private func saveAndContinue() {
         let elevenToken = elevenLabsField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let openAIToken = openAIField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let languageValue = languageField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if requirements.contains(.elevenLabs), elevenToken.isEmpty {
             showStatus("ElevenLabs API key is required.", isError: true)
@@ -291,6 +325,10 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
         }
         if requirements.contains(.openAI), openAIToken.isEmpty {
             showStatus("OpenAI API key is required.", isError: true)
+            return
+        }
+        if requirements.contains(.language), languageValue.isEmpty {
+            showStatus("Language is required.", isError: true)
             return
         }
 
@@ -307,7 +345,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
                         self.setValidating(false, message: nil)
                         switch openAIResult {
                         case .success:
-                            self.saveKeysAndContinue(elevenToken: elevenToken, openAIToken: openAIToken)
+                            self.saveKeysAndContinue(elevenToken: elevenToken, openAIToken: openAIToken, language: languageValue)
                         case .failure:
                             self.showStatus("OpenAI API key is invalid.", isError: true)
                         }
@@ -326,7 +364,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
                 self.setValidating(false, message: nil)
                 switch result {
                 case .success:
-                    self.saveKeysAndContinue(elevenToken: elevenToken, openAIToken: openAIToken)
+                    self.saveKeysAndContinue(elevenToken: elevenToken, openAIToken: openAIToken, language: languageValue)
                 case .failure(let error):
                     self.showStatus(error.localizedDescription, isError: true)
                 }
@@ -334,7 +372,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
             return
         }
 
-        saveKeysAndContinue(elevenToken: elevenToken, openAIToken: openAIToken)
+        saveKeysAndContinue(elevenToken: elevenToken, openAIToken: openAIToken, language: languageValue)
     }
 
     @objc private func quitApp() {
@@ -395,7 +433,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
     }
 
     private func updateFieldFocus(for object: Any?, focused: Bool) {
-        guard let field = object as? NSSecureTextField else { return }
+        guard let field = object as? NSTextField else { return }
         guard let container = fieldContainers[ObjectIdentifier(field)] else { return }
         container.layer?.borderColor = (focused ? palette.accent : palette.fieldBorder).cgColor
         container.layer?.borderWidth = focused ? 1.5 : 1
@@ -429,12 +467,15 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate, NSTextF
         statusLabel.isHidden = false
     }
 
-    private func saveKeysAndContinue(elevenToken: String, openAIToken: String) {
+    private func saveKeysAndContinue(elevenToken: String, openAIToken: String, language: String) {
         if requirements.contains(.elevenLabs) {
             EnvLoader.saveApiKey(elevenToken)
         }
         if requirements.contains(.openAI) {
             EnvLoader.saveOpenAIKey(openAIToken)
+        }
+        if requirements.contains(.language), !language.isEmpty {
+            EnvLoader.saveTargetLanguage(language)
         }
         finish(success: true)
     }

@@ -8,6 +8,7 @@ final class StatusBarController: NSObject {
     private let removeElevenLabsTokenItem = NSMenuItem(title: "Remove ElevenLabs Token", action: #selector(removeElevenLabsToken), keyEquivalent: "")
     private let removeOpenAITokenItem = NSMenuItem(title: "Remove OpenAI Token", action: #selector(removeOpenAIToken), keyEquivalent: "")
     private let removeAllTokensItem = NSMenuItem(title: "Remove All Tokens", action: #selector(removeAllTokens), keyEquivalent: "")
+    private let clearLanguageItem = NSMenuItem(title: "Clear Language", action: #selector(clearLanguage), keyEquivalent: "")
     private let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
     private weak var panel: NSPanel?
     private let transcription: TranscriptionController
@@ -30,6 +31,7 @@ final class StatusBarController: NSObject {
         removeElevenLabsTokenItem.target = self
         removeOpenAITokenItem.target = self
         removeAllTokensItem.target = self
+        clearLanguageItem.target = self
         quitItem.target = self
         menu.delegate = self
         menu.autoenablesItems = false
@@ -38,6 +40,7 @@ final class StatusBarController: NSObject {
         menu.addItem(removeElevenLabsTokenItem)
         menu.addItem(removeOpenAITokenItem)
         menu.addItem(removeAllTokensItem)
+        menu.addItem(clearLanguageItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
         statusItem.menu = menu
@@ -70,9 +73,11 @@ final class StatusBarController: NSObject {
     private func updateTokenItems() {
         let hasElevenLabsToken = EnvLoader.loadApiKey() != nil
         let hasOpenAIToken = EnvLoader.loadOpenAIKey() != nil
+        let hasLanguage = EnvLoader.loadTargetLanguage() != nil
         removeElevenLabsTokenItem.isEnabled = hasElevenLabsToken
         removeOpenAITokenItem.isEnabled = hasOpenAIToken
         removeAllTokensItem.isEnabled = hasElevenLabsToken || hasOpenAIToken
+        clearLanguageItem.isEnabled = hasLanguage
     }
 
     @objc private func removeElevenLabsToken() {
@@ -94,10 +99,16 @@ final class StatusBarController: NSObject {
         alertBeforeQuit()
     }
 
-    private func alertBeforeQuit() {
+    @objc private func clearLanguage() {
+        EnvLoader.removeTargetLanguage()
+        updateTokenItems()
+        alertBeforeQuit(message: "Language Removed", info: "Flungus will now quit. Please reopen it to continue.")
+    }
+
+    private func alertBeforeQuit(message: String = "Token Removed", info: String = "Flungus will now quit. Please reopen it to continue.") {
         let alert = NSAlert()
-        alert.messageText = "Token Removed"
-        alert.informativeText = "Flungus will now quit. Please reopen it to continue."
+        alert.messageText = message
+        alert.informativeText = info
         alert.addButton(withTitle: "Quit")
         alert.runModal()
         NSApplication.shared.terminate(nil)

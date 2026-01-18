@@ -3,6 +3,7 @@ import Foundation
 enum EnvLoader {
     private static let apiKeyDefaultsKey = "ELEVENLABS_API_KEY"
     private static let openAIKeyDefaultsKey = "OPENAI_API_KEY"
+    private static let targetLanguageDefaultsKey = "TARGET_LANGUAGE"
 
     static func loadApiKey() -> String? {
         if let value = UserDefaults.standard.string(forKey: apiKeyDefaultsKey), !value.isEmpty {
@@ -34,6 +35,22 @@ enum EnvLoader {
 
     static func removeOpenAIKey() {
         UserDefaults.standard.removeObject(forKey: openAIKeyDefaultsKey)
+    }
+
+    static func loadTargetLanguage() -> String? {
+        if let value = UserDefaults.standard.string(forKey: targetLanguageDefaultsKey), !value.isEmpty {
+            return value
+        }
+        if let value = loadValue(for: "TARGET_LANGUAGE") { return value }
+        return nil
+    }
+
+    static func saveTargetLanguage(_ value: String) {
+        UserDefaults.standard.set(value, forKey: targetLanguageDefaultsKey)
+    }
+
+    static func removeTargetLanguage() {
+        UserDefaults.standard.removeObject(forKey: targetLanguageDefaultsKey)
     }
 
     static func loadAudioDeviceName() -> String? {
