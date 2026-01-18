@@ -2,7 +2,7 @@ import AppKit
 
 @main
 @available(macOS 14.4, *)
-struct CaptionLayerApp {
+struct FlangApp {
     static func main() {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)

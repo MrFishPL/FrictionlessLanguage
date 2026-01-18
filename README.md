@@ -1,6 +1,6 @@
-# Caption Layer
+# Flang
 
-Caption Layer is a macOS 14.4+ menu bar app that captures system audio, streams it to ElevenLabs for realtime transcription, and shows live captions in a notch-style overlay. You can select words or phrases in the overlay to trigger an OpenAI-powered translation into the configured target language.
+Flang is a macOS 14.4+ menu bar app that captures system audio, streams it to ElevenLabs for realtime transcription, and shows live captions in a notch-style overlay. You can select words or phrases in the overlay to trigger an OpenAI-powered translation into the configured target language.
 
 ## What it does
 - Captures system audio using the macOS process tap APIs.

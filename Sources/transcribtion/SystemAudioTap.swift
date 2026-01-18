@@ -32,7 +32,7 @@ final class SystemAudioTap {
 
         let aggregateUID = UUID().uuidString
         let description: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "CaptionLayer Output Tap",
+            kAudioAggregateDeviceNameKey: "Flang Output Tap",
             kAudioAggregateDeviceUIDKey: aggregateUID,
             kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,
