@@ -17,7 +17,6 @@ struct FlungusApp {
         let panel = NotchPanel(frame: NSRect(origin: origin, size: panelSize))
         let notchView = NotchView(frame: NSRect(origin: .zero, size: panelSize))
         panel.contentView = notchView
-        panel.makeKeyAndOrderFront(nil)
 
         let translator = TranslationController()
         notchView.translationHandler = { fragment, context, completion in
@@ -36,14 +35,15 @@ struct FlungusApp {
         let statusBar = StatusBarController(panel: panel, transcription: transcription, translator: translator)
         _ = statusBar
 
-        requestKeysAndStart(transcription: transcription, translator: translator)
+        requestKeysAndStart(transcription: transcription, translator: translator, panel: panel)
 
         app.run()
     }
 
     private static func requestKeysAndStart(
         transcription: TranscriptionController,
-        translator: TranslationController
+        translator: TranslationController,
+        panel: NSPanel
     ) {
         ApiKeySetupCoordinator.shared.ensureKeys(required: .all) { success in
             guard success else {
@@ -60,6 +60,7 @@ struct FlungusApp {
                         NSApplication.shared.terminate(nil)
                         return
                     }
+                    panel.makeKeyAndOrderFront(nil)
                     transcription.start()
                 }
             }
