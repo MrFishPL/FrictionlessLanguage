@@ -27,7 +27,5 @@ Flungus is a macOS 14.4+ menu bar app that captures system audio, streams it to 
 - API keys are stored in user defaults and can be set/removed from the status bar menu.
 
 ## TODO
-1. add real saving
-2. add checking if something is already saved
-3. add flashcards gui
-4. add some other features in the future
+1. Do not pause if already paused
+2. Improve the prompt
