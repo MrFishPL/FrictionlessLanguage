@@ -45,11 +45,23 @@ struct FlungusApp {
         transcription: TranscriptionController,
         translator: TranslationController
     ) {
-        transcription.requestApiKeyIfNeeded { success in
-            guard success else { return }
-            translator.requestApiKeyIfNeeded { translatorSuccess in
-                guard translatorSuccess else { return }
-                transcription.start()
+        ApiKeySetupCoordinator.shared.ensureKeys(required: .all) { success in
+            guard success else {
+                NSApplication.shared.terminate(nil)
+                return
+            }
+            transcription.requestApiKeyIfNeeded { transcriptionSuccess in
+                guard transcriptionSuccess else {
+                    NSApplication.shared.terminate(nil)
+                    return
+                }
+                translator.requestApiKeyIfNeeded { translatorSuccess in
+                    guard translatorSuccess else {
+                        NSApplication.shared.terminate(nil)
+                        return
+                    }
+                    transcription.start()
+                }
             }
         }
     }

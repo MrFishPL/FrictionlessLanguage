@@ -7,33 +7,6 @@ final class TranslationController {
     private var apiKey: String?
     private var didShowAuthError = false
 
-    func promptForApiKey(completion: ((Bool) -> Void)? = nil) {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Enter OpenAI API Key"
-            alert.informativeText = "This key is saved locally for Flungus."
-            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-            field.placeholderString = "OPENAI_API_KEY"
-            alert.accessoryView = field
-            alert.addButton(withTitle: "Save")
-            alert.addButton(withTitle: "Cancel")
-
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                if value.isEmpty {
-                    completion?(false)
-                    return
-                }
-                EnvLoader.saveOpenAIKey(value)
-                self.apiKey = value
-                completion?(true)
-            } else {
-                completion?(false)
-            }
-        }
-    }
-
     func requestApiKeyIfNeeded(completion: @escaping (Bool) -> Void) {
         if let apiKey = apiKey ?? EnvLoader.loadOpenAIKey(), !apiKey.isEmpty {
             self.apiKey = apiKey
@@ -41,10 +14,9 @@ final class TranslationController {
             return
         }
 
-        promptForApiKey { [weak self] success in
+        ApiKeySetupCoordinator.shared.ensureKeys(required: [.openAI]) { [weak self] success in
             guard let self else { return }
-            guard success, let apiKey = self.apiKey ?? EnvLoader.loadOpenAIKey(), !apiKey.isEmpty else {
-                self.alertMissingTokenAndQuit()
+            guard success, let apiKey = EnvLoader.loadOpenAIKey(), !apiKey.isEmpty else {
                 completion(false)
                 return
             }
@@ -230,16 +202,7 @@ What this fragment of text or a word "\(fragment)" means in context of this text
         }
     }
 
-    private func alertMissingTokenAndQuit() {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Token Required"
-            alert.informativeText = "Please set your OpenAI API key to use translation."
-            alert.addButton(withTitle: "Quit")
-            alert.runModal()
-            NSApplication.shared.terminate(nil)
-        }
-    }
+    // API key setup handled by SetupWindowController.
 }
 
 private enum TranslationError: LocalizedError {
