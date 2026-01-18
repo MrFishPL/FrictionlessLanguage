@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="${APP_NAME:-Flang}"
+APP_NAME="${APP_NAME:-Flungus}"
 DIST_DIR="$ROOT_DIR/dist"
 APP_PATH="$DIST_DIR/$APP_NAME.app"
 ICON_PATH="$ROOT_DIR/Packaging/AppIcon.icns"

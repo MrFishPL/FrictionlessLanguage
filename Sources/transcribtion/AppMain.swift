@@ -2,7 +2,7 @@ import AppKit
 
 @main
 @available(macOS 14.4, *)
-struct FlangApp {
+struct FlungusApp {
     static func main() {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)

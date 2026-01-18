@@ -42,7 +42,7 @@ final class SavedFragmentStore {
         guard let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return nil
         }
-        let directory = base.appendingPathComponent("Flang", isDirectory: true)
+        let directory = base.appendingPathComponent("Flungus", isDirectory: true)
         return directory.appendingPathComponent(fileName)
     }
 }

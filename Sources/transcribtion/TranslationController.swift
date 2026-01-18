@@ -11,7 +11,7 @@ final class TranslationController {
         DispatchQueue.main.async {
             let alert = NSAlert()
             alert.messageText = "Enter OpenAI API Key"
-            alert.informativeText = "This key is saved locally for Flang."
+            alert.informativeText = "This key is saved locally for Flungus."
             let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
             field.placeholderString = "OPENAI_API_KEY"
             alert.accessoryView = field
@@ -222,7 +222,7 @@ What this fragment of text or a word "\(fragment)" means in context of this text
         DispatchQueue.main.async {
             let alert = NSAlert()
             alert.messageText = "There was an error. Is your OpenAI token correct?"
-            alert.informativeText = "Flang will now quit. Please check your OpenAI API key."
+            alert.informativeText = "Flungus will now quit. Please check your OpenAI API key."
             alert.addButton(withTitle: "Quit")
             alert.runModal()
             EnvLoader.removeOpenAIKey()

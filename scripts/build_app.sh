@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="${APP_NAME:-Flang}"
+APP_NAME="${APP_NAME:-Flungus}"
 EXECUTABLE_NAME="${EXECUTABLE_NAME:-transcribtion}"
-BUNDLE_ID="${BUNDLE_ID:-com.Flang.app}"
+BUNDLE_ID="${BUNDLE_ID:-com.Flungus.app}"
 
 DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"

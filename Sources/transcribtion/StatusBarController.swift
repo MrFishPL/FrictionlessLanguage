@@ -21,7 +21,7 @@ final class StatusBarController: NSObject {
         super.init()
 
         if let button = statusItem.button {
-            let image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Flang")
+            let image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Flungus")
             image?.isTemplate = true
             button.image = image
         }
@@ -97,7 +97,7 @@ final class StatusBarController: NSObject {
     private func alertBeforeQuit() {
         let alert = NSAlert()
         alert.messageText = "Token Removed"
-        alert.informativeText = "Flang will now quit. Please reopen it to continue."
+        alert.informativeText = "Flungus will now quit. Please reopen it to continue."
         alert.addButton(withTitle: "Quit")
         alert.runModal()
         NSApplication.shared.terminate(nil)
