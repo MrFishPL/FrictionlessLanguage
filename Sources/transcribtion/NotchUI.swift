@@ -335,6 +335,10 @@ final class NotchView: NSView {
                 hoveredWordRange = nil
                 applyHighlight()
             } else {
+                if event.clickCount == 2 {
+                    centerPanelHorizontally()
+                    return
+                }
                 startPanelDrag(with: event)
             }
         } else {
