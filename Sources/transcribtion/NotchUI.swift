@@ -40,6 +40,7 @@ final class NotchView: NSView {
     private var hoveredWordRange: NSRange?
     private let defaultTextColor = NSColor.white.withAlphaComponent(0.9)
     private let highlightTextColor = NSColor.systemBlue
+    private let savedHighlightColor = NSColor.systemYellow
 
     // Selection state
     private var isSelecting = false
@@ -58,6 +59,11 @@ final class NotchView: NSView {
     private let saveButton = NSButton(frame: .zero)
     private let closeButton = NSButton(frame: .zero)
     private let translationTextColor = NSColor.systemYellow
+    private var savedFragments: [SavedFragment] = SavedFragmentStore.shared.load()
+    private var savedHighlightRanges: [NSRange] = []
+    private var currentSelectionText: String?
+    private var currentContextText: String?
+    private var currentTranslationText: String?
     var translationHandler: ((String, String, @escaping (Result<String, Error>) -> Void) -> Void)?
 
     // Waveform indicator
@@ -173,22 +179,62 @@ final class NotchView: NSView {
     }
 
     @objc private func saveTranslation() {
-        isSaved.toggle()
-        saveButton.contentTintColor = isSaved ? .systemBlue : .white
+        guard let originalText = currentSelectionText,
+              let contextText = currentContextText else {
+            return
+        }
+
+        if isSaved {
+            savedFragments.removeAll { $0.originalText == originalText }
+            SavedFragmentStore.shared.save(savedFragments)
+            isSaved = false
+            saveButton.contentTintColor = .white
+            if !isTranslationMode {
+                refreshSavedHighlights()
+            }
+            return
+        }
+
+        guard let translationText = currentTranslationText, !translationText.isEmpty else {
+            NSSound.beep()
+            return
+        }
+
+        let fragment = SavedFragment(
+            id: UUID(),
+            originalText: originalText,
+            contextText: contextText,
+            translationText: translationText,
+            savedAt: Date()
+        )
+        savedFragments.append(fragment)
+        SavedFragmentStore.shared.save(savedFragments)
+        isSaved = true
+        saveButton.contentTintColor = savedHighlightColor
+        if !isTranslationMode {
+            refreshSavedHighlights()
+        }
     }
 
     private func enterTranslationMode(selectedText: String) {
         guard !isTranslationMode else { return }
         isTranslationMode = true
         isSaved = false
+        currentSelectionText = selectedText
+        currentTranslationText = nil
 
         // Save current transcription text
         savedTranscriptionText = textView.string
+        currentContextText = savedTranscriptionText
+
+        if savedFragments.contains(where: { $0.originalText == selectedText }) {
+            isSaved = true
+        }
 
         // Show buttons
         saveButton.isHidden = false
         closeButton.isHidden = false
-        saveButton.contentTintColor = .white
+        saveButton.contentTintColor = isSaved ? savedHighlightColor : .white
 
         let attributed = NSMutableAttributedString(
             string: "Translating...",
@@ -222,6 +268,7 @@ final class NotchView: NSView {
             case .failure(let error):
                 translationText = "Translation failed: \(error.localizedDescription)"
             }
+            self.currentTranslationText = translationText
 
             let translated = NSMutableAttributedString(
                 string: translationText,
@@ -250,15 +297,7 @@ final class NotchView: NSView {
         hoveredWordRange = nil
 
         // Restore transcription text
-        let attributed = NSMutableAttributedString(
-            string: savedTranscriptionText,
-            attributes: [
-                .font: font,
-                .foregroundColor: defaultTextColor,
-            ]
-        )
-        textView.textStorage?.setAttributedString(attributed)
-        updateTextLayout()
+        setText(savedTranscriptionText)
     }
 
     required init?(coder: NSCoder) {
@@ -520,11 +559,19 @@ final class NotchView: NSView {
     }
 
     private func applyHighlight() {
+        if isTranslationMode { return }
         guard let textStorage = textView.textStorage else { return }
 
         // Reset all text to default color
         let fullRange = NSRange(location: 0, length: textStorage.length)
         textStorage.addAttribute(.foregroundColor, value: defaultTextColor, range: fullRange)
+
+        // Apply saved highlights
+        for range in savedHighlightRanges {
+            if range.location + range.length <= textStorage.length {
+                textStorage.addAttribute(.foregroundColor, value: savedHighlightColor, range: range)
+            }
+        }
 
         // Apply highlight to selection first (if any)
         if let range = selectedRange, range.location + range.length <= textStorage.length {
@@ -616,7 +663,53 @@ final class NotchView: NSView {
         }
 
         textView.textStorage?.setAttributedString(attributed)
+        savedHighlightRanges = computeSavedHighlightRanges(in: attributed.string)
+        applyHighlight()
         updateTextLayout()
+    }
+
+    private func refreshSavedHighlights() {
+        if isTranslationMode { return }
+        savedHighlightRanges = computeSavedHighlightRanges(in: textView.string)
+        applyHighlight()
+    }
+
+    private func computeSavedHighlightRanges(in text: String) -> [NSRange] {
+        guard !text.isEmpty else { return [] }
+        let nsText = text as NSString
+        var ranges: [NSRange] = []
+
+        for fragment in savedFragments {
+            let needle = fragment.originalText
+            if needle.isEmpty { continue }
+            if isSingleWord(needle) {
+                ranges.append(contentsOf: findWholeWordRanges(needle, in: text))
+            } else {
+                var searchRange = NSRange(location: 0, length: nsText.length)
+                while true {
+                    let found = nsText.range(of: needle, options: [], range: searchRange)
+                    if found.location == NSNotFound { break }
+                    ranges.append(found)
+                    let nextLocation = found.location + max(found.length, 1)
+                    if nextLocation >= nsText.length { break }
+                    searchRange = NSRange(location: nextLocation, length: nsText.length - nextLocation)
+                }
+            }
+        }
+
+        return ranges
+    }
+
+    private func isSingleWord(_ text: String) -> Bool {
+        return text.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+    }
+
+    private func findWholeWordRanges(_ word: String, in text: String) -> [NSRange] {
+        let escaped = NSRegularExpression.escapedPattern(for: word)
+        let pattern = "\\b\(escaped)\\b"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return [] }
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        return regex.matches(in: text, options: [], range: range).map { $0.range }
     }
 
     private func updateTextLayout() {
