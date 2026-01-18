@@ -40,6 +40,7 @@ final class NotchView: NSView {
     private var hoveredWordRange: NSRange?
     private let defaultTextColor = NSColor.white.withAlphaComponent(0.9)
     private let highlightTextColor = NSColor.systemBlue
+    private let savedHighlightColor = NSColor.systemYellow
 
     // Selection state
     private var isSelecting = false
@@ -58,7 +59,15 @@ final class NotchView: NSView {
     private let saveButton = NSButton(frame: .zero)
     private let closeButton = NSButton(frame: .zero)
     private let translationTextColor = NSColor.systemYellow
+    private var savedFragments: [SavedFragment] = SavedFragmentStore.shared.load()
+    private var savedHighlightRanges: [NSRange] = []
+    private var currentSelectionText: String?
+    private var currentContextText: String?
+    private var currentTranslationText: String?
     var translationHandler: ((String, String, @escaping (Result<String, Error>) -> Void) -> Void)?
+
+    // Waveform indicator
+    private let waveformView = AnimatedWaveformView(frame: .zero)
 
     override init(frame frameRect: NSRect) {
         textView = NSTextView(frame: .zero)
@@ -107,6 +116,24 @@ final class NotchView: NSView {
 
         // Setup translation mode buttons (hidden by default)
         setupTranslationButtons()
+
+        // Setup waveform indicator in top-left corner
+        setupWaveformIndicator()
+    }
+
+    private func setupWaveformIndicator() {
+        waveformView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(waveformView)
+
+        NSLayoutConstraint.activate([
+            waveformView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            waveformView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            waveformView.widthAnchor.constraint(equalToConstant: 20),
+            waveformView.heightAnchor.constraint(equalToConstant: 16),
+        ])
+
+        // Start active by default (listening state)
+        waveformView.setActive(true)
     }
 
     private func setupTranslationButtons() {
@@ -152,22 +179,62 @@ final class NotchView: NSView {
     }
 
     @objc private func saveTranslation() {
-        isSaved.toggle()
-        saveButton.contentTintColor = isSaved ? .systemBlue : .white
+        guard let originalText = currentSelectionText,
+              let contextText = currentContextText else {
+            return
+        }
+
+        if isSaved {
+            savedFragments.removeAll { $0.originalText == originalText }
+            SavedFragmentStore.shared.save(savedFragments)
+            isSaved = false
+            saveButton.contentTintColor = .white
+            if !isTranslationMode {
+                refreshSavedHighlights()
+            }
+            return
+        }
+
+        guard let translationText = currentTranslationText, !translationText.isEmpty else {
+            NSSound.beep()
+            return
+        }
+
+        let fragment = SavedFragment(
+            id: UUID(),
+            originalText: originalText,
+            contextText: contextText,
+            translationText: translationText,
+            savedAt: Date()
+        )
+        savedFragments.append(fragment)
+        SavedFragmentStore.shared.save(savedFragments)
+        isSaved = true
+        saveButton.contentTintColor = savedHighlightColor
+        if !isTranslationMode {
+            refreshSavedHighlights()
+        }
     }
 
     private func enterTranslationMode(selectedText: String) {
         guard !isTranslationMode else { return }
         isTranslationMode = true
         isSaved = false
+        currentSelectionText = selectedText
+        currentTranslationText = nil
 
         // Save current transcription text
         savedTranscriptionText = textView.string
+        currentContextText = savedTranscriptionText
+
+        if savedFragments.contains(where: { $0.originalText == selectedText }) {
+            isSaved = true
+        }
 
         // Show buttons
         saveButton.isHidden = false
         closeButton.isHidden = false
-        saveButton.contentTintColor = .white
+        saveButton.contentTintColor = isSaved ? savedHighlightColor : .white
 
         let attributed = NSMutableAttributedString(
             string: "Translating...",
@@ -201,6 +268,7 @@ final class NotchView: NSView {
             case .failure(let error):
                 translationText = "Translation failed: \(error.localizedDescription)"
             }
+            self.currentTranslationText = translationText
 
             let translated = NSMutableAttributedString(
                 string: translationText,
@@ -229,15 +297,7 @@ final class NotchView: NSView {
         hoveredWordRange = nil
 
         // Restore transcription text
-        let attributed = NSMutableAttributedString(
-            string: savedTranscriptionText,
-            attributes: [
-                .font: font,
-                .foregroundColor: defaultTextColor,
-            ]
-        )
-        textView.textStorage?.setAttributedString(attributed)
-        updateTextLayout()
+        setText(savedTranscriptionText)
     }
 
     required init?(coder: NSCoder) {
@@ -271,6 +331,7 @@ final class NotchView: NSView {
         isHovering = true
         sendPlayPauseKey()
         shouldResumePlayback = true
+        waveformView.setFrozen(true)
         hoverChangedHandler?(true)
         updateHoveredWord(with: event)
     }
@@ -282,6 +343,7 @@ final class NotchView: NSView {
             sendPlayPauseKey()
             shouldResumePlayback = false
         }
+        waveformView.setFrozen(false)
         hoverChangedHandler?(false)
 
         if isTranslationMode {
@@ -311,6 +373,12 @@ final class NotchView: NSView {
                 selectedRange = wordRange
                 hoveredWordRange = nil
                 applyHighlight()
+            } else {
+                if event.clickCount == 2 {
+                    centerPanelHorizontally()
+                    return
+                }
+                startPanelDrag(with: event)
             }
         } else {
             if event.clickCount == 2 {
@@ -491,11 +559,19 @@ final class NotchView: NSView {
     }
 
     private func applyHighlight() {
+        if isTranslationMode { return }
         guard let textStorage = textView.textStorage else { return }
 
         // Reset all text to default color
         let fullRange = NSRange(location: 0, length: textStorage.length)
         textStorage.addAttribute(.foregroundColor, value: defaultTextColor, range: fullRange)
+
+        // Apply saved highlights
+        for range in savedHighlightRanges {
+            if range.location + range.length <= textStorage.length {
+                textStorage.addAttribute(.foregroundColor, value: savedHighlightColor, range: range)
+            }
+        }
 
         // Apply highlight to selection first (if any)
         if let range = selectedRange, range.location + range.length <= textStorage.length {
@@ -521,6 +597,18 @@ final class NotchView: NSView {
         selectedRange = nil
         selectionAnchorRange = nil
         applyHighlight()
+    }
+
+    func setListening(_ listening: Bool) {
+        waveformView.setActive(listening)
+    }
+
+    func updateAudioLevel(_ level: CGFloat) {
+        waveformView.updateWithAudioLevel(level)
+    }
+
+    func setWaveformFrozen(_ frozen: Bool) {
+        waveformView.setFrozen(frozen)
     }
 
     private func sendPlayPauseKey() {
@@ -575,7 +663,53 @@ final class NotchView: NSView {
         }
 
         textView.textStorage?.setAttributedString(attributed)
+        savedHighlightRanges = computeSavedHighlightRanges(in: attributed.string)
+        applyHighlight()
         updateTextLayout()
+    }
+
+    private func refreshSavedHighlights() {
+        if isTranslationMode { return }
+        savedHighlightRanges = computeSavedHighlightRanges(in: textView.string)
+        applyHighlight()
+    }
+
+    private func computeSavedHighlightRanges(in text: String) -> [NSRange] {
+        guard !text.isEmpty else { return [] }
+        let nsText = text as NSString
+        var ranges: [NSRange] = []
+
+        for fragment in savedFragments {
+            let needle = fragment.originalText
+            if needle.isEmpty { continue }
+            if isSingleWord(needle) {
+                ranges.append(contentsOf: findWholeWordRanges(needle, in: text))
+            } else {
+                var searchRange = NSRange(location: 0, length: nsText.length)
+                while true {
+                    let found = nsText.range(of: needle, options: [], range: searchRange)
+                    if found.location == NSNotFound { break }
+                    ranges.append(found)
+                    let nextLocation = found.location + max(found.length, 1)
+                    if nextLocation >= nsText.length { break }
+                    searchRange = NSRange(location: nextLocation, length: nsText.length - nextLocation)
+                }
+            }
+        }
+
+        return ranges
+    }
+
+    private func isSingleWord(_ text: String) -> Bool {
+        return text.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+    }
+
+    private func findWholeWordRanges(_ word: String, in text: String) -> [NSRange] {
+        let escaped = NSRegularExpression.escapedPattern(for: word)
+        let pattern = "\\b\(escaped)\\b"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return [] }
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        return regex.matches(in: text, options: [], range: range).map { $0.range }
     }
 
     private func updateTextLayout() {
@@ -627,6 +761,126 @@ final class NotchView: NSView {
         path.closeSubpath()
 
         maskLayer.path = path
+    }
+}
+
+final class AnimatedWaveformView: NSView {
+    private var barLayers: [CALayer] = []
+    private let barCount = 5
+    private let barWidth: CGFloat = 2
+    private let barSpacing: CGFloat = 2
+    private let minHeight: CGFloat = 3
+    private let maxHeight: CGFloat = 14
+    private var isActive = false
+    private var isFrozen = false
+
+    // Each bar has its own level
+    private var barLevels: [CGFloat] = [0, 0, 0, 0, 0]
+    private var barVelocities: [CGFloat] = [0, 0, 0, 0, 0]
+    private var targetLevels: [CGFloat] = [0, 0, 0, 0, 0]
+
+    // Per-bar characteristics for natural variation
+    private let barSensitivity: [CGFloat] = [0.9, 1.1, 1.0, 0.85, 0.95]
+    private let barDamping: [CGFloat] = [0.15, 0.12, 0.18, 0.14, 0.16]
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        setupBars()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupBars() {
+        let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
+        let startX = (bounds.width - totalWidth) / 2
+
+        for i in 0..<barCount {
+            let bar = CALayer()
+            bar.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
+            bar.cornerRadius = barWidth / 2
+            let x = startX + CGFloat(i) * (barWidth + barSpacing)
+            bar.frame = CGRect(x: x, y: (bounds.height - minHeight) / 2, width: barWidth, height: minHeight)
+            layer?.addSublayer(bar)
+            barLayers.append(bar)
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        updateBarPositions()
+    }
+
+    private func updateBarPositions() {
+        let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
+        let startX = (bounds.width - totalWidth) / 2
+
+        for (i, bar) in barLayers.enumerated() {
+            let x = startX + CGFloat(i) * (barWidth + barSpacing)
+            let currentHeight = bar.bounds.height
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            bar.frame = CGRect(x: x, y: (bounds.height - currentHeight) / 2, width: barWidth, height: currentHeight)
+            CATransaction.commit()
+        }
+    }
+
+    func setActive(_ active: Bool) {
+        isActive = active
+        if !active {
+            for i in 0..<barCount {
+                targetLevels[i] = 0
+                barLevels[i] = 0
+                barVelocities[i] = 0
+            }
+            updateBars()
+        }
+    }
+
+    func setFrozen(_ frozen: Bool) {
+        isFrozen = frozen
+    }
+
+    func updateWithAudioLevel(_ level: CGFloat) {
+        guard isActive, !isFrozen else { return }
+
+        // Set target levels with per-bar variation and randomness
+        for i in 0..<barCount {
+            let randomFactor = CGFloat.random(in: 0.7...1.3)
+            let sensitivity = barSensitivity[i]
+            targetLevels[i] = min(level * sensitivity * randomFactor, 1.0)
+
+            // Spring physics for natural movement
+            let damping = barDamping[i]
+            let spring: CGFloat = 0.4
+            let acceleration = (targetLevels[i] - barLevels[i]) * spring - barVelocities[i] * damping
+            barVelocities[i] += acceleration
+            barLevels[i] += barVelocities[i]
+
+            // Clamp values
+            barLevels[i] = max(0, min(1, barLevels[i]))
+        }
+
+        updateBars()
+    }
+
+    private func updateBars() {
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.03)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .linear))
+
+        let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
+        let startX = (bounds.width - totalWidth) / 2
+
+        for (i, bar) in barLayers.enumerated() {
+            let height = minHeight + (maxHeight - minHeight) * barLevels[i]
+            let x = startX + CGFloat(i) * (barWidth + barSpacing)
+            bar.frame = CGRect(x: x, y: (bounds.height - height) / 2, width: barWidth, height: height)
+        }
+
+        CATransaction.commit()
     }
 }
 

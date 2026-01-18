@@ -267,9 +267,32 @@ final class TranscriptionController {
         }
 
         guard let channelData = outputBuffer.int16ChannelData else { return }
-        let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
+        let frameLength = Int(outputBuffer.frameLength)
+        let byteCount = frameLength * MemoryLayout<Int16>.size
         let data = Data(bytes: channelData[0], count: byteCount)
+
+        // Calculate audio level (RMS)
+        let level = calculateAudioLevel(channelData[0], frameCount: frameLength)
+        DispatchQueue.main.async { [weak self] in
+            self?.notchView.updateAudioLevel(level)
+        }
+
         sendAudioData(data, sampleRate: Int(targetFormat.sampleRate))
+    }
+
+    private func calculateAudioLevel(_ samples: UnsafePointer<Int16>, frameCount: Int) -> CGFloat {
+        var sum: Float = 0
+        for i in 0..<frameCount {
+            let sample = Float(samples[i]) / Float(Int16.max)
+            sum += sample * sample
+        }
+        let rms = sqrt(sum / Float(frameCount))
+
+        // Convert to 0-1 range with some amplification for visibility
+        // Apply logarithmic scaling for more natural feel
+        let db = 20 * log10(max(rms, 0.0001))
+        let normalizedDb = (db + 60) / 60  // Normalize from -60dB to 0dB
+        return CGFloat(min(max(normalizedDb, 0), 1))
     }
 
     private func sendAudioData(_ data: Data, sampleRate: Int) {
@@ -310,7 +333,7 @@ final class TranscriptionController {
         DispatchQueue.main.async {
             let alert = NSAlert()
             alert.messageText = "There was an error. Is your token correct?"
-            alert.informativeText = "Caption Layer will now quit. Please check your ElevenLabs API key."
+            alert.informativeText = "Flang will now quit. Please check your ElevenLabs API key."
             alert.addButton(withTitle: "Quit")
             alert.runModal()
             EnvLoader.removeApiKey()
@@ -322,7 +345,7 @@ final class TranscriptionController {
         DispatchQueue.main.async {
             let alert = NSAlert()
             alert.messageText = "Enter ElevenLabs API Key"
-            alert.informativeText = "This key is saved locally for Caption Layer."
+            alert.informativeText = "This key is saved locally for Flang."
             let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
             field.placeholderString = "ELEVENLABS_API_KEY"
             alert.accessoryView = field
@@ -343,7 +366,7 @@ final class TranscriptionController {
         DispatchQueue.main.async {
             let alert = NSAlert()
             alert.messageText = "Token Required"
-            alert.informativeText = "Please set your ElevenLabs API key to use Caption Layer."
+            alert.informativeText = "Please set your ElevenLabs API key to use Flang."
             alert.addButton(withTitle: "Quit")
             alert.runModal()
             NSApplication.shared.terminate(nil)
