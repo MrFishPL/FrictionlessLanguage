@@ -60,6 +60,9 @@ final class NotchView: NSView {
     private let translationTextColor = NSColor.systemYellow
     var translationHandler: ((String, String, @escaping (Result<String, Error>) -> Void) -> Void)?
 
+    // Waveform indicator
+    private let waveformView = AnimatedWaveformView(frame: .zero)
+
     override init(frame frameRect: NSRect) {
         textView = NSTextView(frame: .zero)
         scrollView = TransparentScrollView(frame: .zero)
@@ -107,6 +110,24 @@ final class NotchView: NSView {
 
         // Setup translation mode buttons (hidden by default)
         setupTranslationButtons()
+
+        // Setup waveform indicator in top-left corner
+        setupWaveformIndicator()
+    }
+
+    private func setupWaveformIndicator() {
+        waveformView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(waveformView)
+
+        NSLayoutConstraint.activate([
+            waveformView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            waveformView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            waveformView.widthAnchor.constraint(equalToConstant: 20),
+            waveformView.heightAnchor.constraint(equalToConstant: 16),
+        ])
+
+        // Start active by default (listening state)
+        waveformView.setActive(true)
     }
 
     private func setupTranslationButtons() {
@@ -271,6 +292,7 @@ final class NotchView: NSView {
         isHovering = true
         sendPlayPauseKey()
         shouldResumePlayback = true
+        waveformView.setFrozen(true)
         hoverChangedHandler?(true)
         updateHoveredWord(with: event)
     }
@@ -282,6 +304,7 @@ final class NotchView: NSView {
             sendPlayPauseKey()
             shouldResumePlayback = false
         }
+        waveformView.setFrozen(false)
         hoverChangedHandler?(false)
 
         if isTranslationMode {
@@ -523,6 +546,18 @@ final class NotchView: NSView {
         applyHighlight()
     }
 
+    func setListening(_ listening: Bool) {
+        waveformView.setActive(listening)
+    }
+
+    func updateAudioLevel(_ level: CGFloat) {
+        waveformView.updateWithAudioLevel(level)
+    }
+
+    func setWaveformFrozen(_ frozen: Bool) {
+        waveformView.setFrozen(frozen)
+    }
+
     private func sendPlayPauseKey() {
         // Use private MediaRemote framework to toggle play/pause
         typealias MRMediaRemoteSendCommandFunction = @convention(c) (UInt32, UnsafeRawPointer?) -> Bool
@@ -627,6 +662,126 @@ final class NotchView: NSView {
         path.closeSubpath()
 
         maskLayer.path = path
+    }
+}
+
+final class AnimatedWaveformView: NSView {
+    private var barLayers: [CALayer] = []
+    private let barCount = 5
+    private let barWidth: CGFloat = 2
+    private let barSpacing: CGFloat = 2
+    private let minHeight: CGFloat = 3
+    private let maxHeight: CGFloat = 14
+    private var isActive = false
+    private var isFrozen = false
+
+    // Each bar has its own level
+    private var barLevels: [CGFloat] = [0, 0, 0, 0, 0]
+    private var barVelocities: [CGFloat] = [0, 0, 0, 0, 0]
+    private var targetLevels: [CGFloat] = [0, 0, 0, 0, 0]
+
+    // Per-bar characteristics for natural variation
+    private let barSensitivity: [CGFloat] = [0.9, 1.1, 1.0, 0.85, 0.95]
+    private let barDamping: [CGFloat] = [0.15, 0.12, 0.18, 0.14, 0.16]
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        setupBars()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupBars() {
+        let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
+        let startX = (bounds.width - totalWidth) / 2
+
+        for i in 0..<barCount {
+            let bar = CALayer()
+            bar.backgroundColor = NSColor.white.withAlphaComponent(0.4).cgColor
+            bar.cornerRadius = barWidth / 2
+            let x = startX + CGFloat(i) * (barWidth + barSpacing)
+            bar.frame = CGRect(x: x, y: (bounds.height - minHeight) / 2, width: barWidth, height: minHeight)
+            layer?.addSublayer(bar)
+            barLayers.append(bar)
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        updateBarPositions()
+    }
+
+    private func updateBarPositions() {
+        let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
+        let startX = (bounds.width - totalWidth) / 2
+
+        for (i, bar) in barLayers.enumerated() {
+            let x = startX + CGFloat(i) * (barWidth + barSpacing)
+            let currentHeight = bar.bounds.height
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            bar.frame = CGRect(x: x, y: (bounds.height - currentHeight) / 2, width: barWidth, height: currentHeight)
+            CATransaction.commit()
+        }
+    }
+
+    func setActive(_ active: Bool) {
+        isActive = active
+        if !active {
+            for i in 0..<barCount {
+                targetLevels[i] = 0
+                barLevels[i] = 0
+                barVelocities[i] = 0
+            }
+            updateBars()
+        }
+    }
+
+    func setFrozen(_ frozen: Bool) {
+        isFrozen = frozen
+    }
+
+    func updateWithAudioLevel(_ level: CGFloat) {
+        guard isActive, !isFrozen else { return }
+
+        // Set target levels with per-bar variation and randomness
+        for i in 0..<barCount {
+            let randomFactor = CGFloat.random(in: 0.7...1.3)
+            let sensitivity = barSensitivity[i]
+            targetLevels[i] = min(level * sensitivity * randomFactor, 1.0)
+
+            // Spring physics for natural movement
+            let damping = barDamping[i]
+            let spring: CGFloat = 0.4
+            let acceleration = (targetLevels[i] - barLevels[i]) * spring - barVelocities[i] * damping
+            barVelocities[i] += acceleration
+            barLevels[i] += barVelocities[i]
+
+            // Clamp values
+            barLevels[i] = max(0, min(1, barLevels[i]))
+        }
+
+        updateBars()
+    }
+
+    private func updateBars() {
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.03)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .linear))
+
+        let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
+        let startX = (bounds.width - totalWidth) / 2
+
+        for (i, bar) in barLayers.enumerated() {
+            let height = minHeight + (maxHeight - minHeight) * barLevels[i]
+            let x = startX + CGFloat(i) * (barWidth + barSpacing)
+            bar.frame = CGRect(x: x, y: (bounds.height - height) / 2, width: barWidth, height: height)
+        }
+
+        CATransaction.commit()
     }
 }
 

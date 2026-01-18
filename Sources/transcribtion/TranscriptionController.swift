@@ -267,9 +267,32 @@ final class TranscriptionController {
         }
 
         guard let channelData = outputBuffer.int16ChannelData else { return }
-        let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
+        let frameLength = Int(outputBuffer.frameLength)
+        let byteCount = frameLength * MemoryLayout<Int16>.size
         let data = Data(bytes: channelData[0], count: byteCount)
+
+        // Calculate audio level (RMS)
+        let level = calculateAudioLevel(channelData[0], frameCount: frameLength)
+        DispatchQueue.main.async { [weak self] in
+            self?.notchView.updateAudioLevel(level)
+        }
+
         sendAudioData(data, sampleRate: Int(targetFormat.sampleRate))
+    }
+
+    private func calculateAudioLevel(_ samples: UnsafePointer<Int16>, frameCount: Int) -> CGFloat {
+        var sum: Float = 0
+        for i in 0..<frameCount {
+            let sample = Float(samples[i]) / Float(Int16.max)
+            sum += sample * sample
+        }
+        let rms = sqrt(sum / Float(frameCount))
+
+        // Convert to 0-1 range with some amplification for visibility
+        // Apply logarithmic scaling for more natural feel
+        let db = 20 * log10(max(rms, 0.0001))
+        let normalizedDb = (db + 60) / 60  // Normalize from -60dB to 0dB
+        return CGFloat(min(max(normalizedDb, 0), 1))
     }
 
     private func sendAudioData(_ data: Data, sampleRate: Int) {
