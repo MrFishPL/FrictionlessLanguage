@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 final class SavedWordsCoordinator {
     static let shared = SavedWordsCoordinator()
@@ -74,14 +75,14 @@ final class SavedWordsWindowController: NSWindowController, NSWindowDelegate {
         let titleLabel = NSTextField(labelWithString: "Saved Words")
         titleLabel.font = palette.titleFont
         titleLabel.textColor = palette.titleColor
+        titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        // Close button
-        let closeButton = PaddedButton(title: "Close", target: self, action: #selector(closeWindow))
-        styleSecondaryButton(closeButton)
+        // Export button
+        let exportButton = PaddedButton(title: "Export", target: self, action: #selector(exportWords))
+        styleExportButton(exportButton)
 
-        let titleRow = NSStackView(views: [titleLabel, closeButton])
+        let titleRow = NSStackView(views: [titleLabel, exportButton])
         titleRow.orientation = .horizontal
-        titleRow.distribution = .equalSpacing
         titleRow.alignment = .centerY
         titleRow.translatesAutoresizingMaskIntoConstraints = false
 
@@ -117,7 +118,16 @@ final class SavedWordsWindowController: NSWindowController, NSWindowDelegate {
         let clipView = NSClipView()
         clipView.documentView = stackView
         clipView.drawsBackground = false
+        clipView.postsBoundsChangedNotifications = true
         scrollView.contentView = clipView
+
+        // Observe scroll to reset hover states
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(scrollViewDidScroll),
+            name: NSView.boundsDidChangeNotification,
+            object: clipView
+        )
 
         card.addSubview(scrollView)
 
@@ -231,25 +241,77 @@ final class SavedWordsWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    @objc private func closeWindow() {
-        window?.close()
-    }
-
     func windowWillClose(_ notification: Notification) {
         SavedWordsCoordinator.shared.windowController = nil
+        NotificationCenter.default.removeObserver(self)
     }
 
-    private func styleSecondaryButton(_ button: NSButton) {
+    @objc private func scrollViewDidScroll(_ notification: Notification) {
+        // Reset all hover states when scrolling
+        for view in stackView.arrangedSubviews {
+            if let rowView = view as? SavedWordRowView {
+                rowView.resetHoverState()
+            }
+        }
+    }
+
+    private func styleExportButton(_ button: NSButton) {
         button.isBordered = false
         button.font = palette.buttonFont
         button.wantsLayer = true
         button.layer?.cornerRadius = 9
-        button.layer?.borderWidth = 1
-        button.layer?.borderColor = palette.secondaryBorder.cgColor
-        button.layer?.backgroundColor = palette.secondaryBackground.cgColor
-        button.contentTintColor = palette.secondaryText
+        button.layer?.backgroundColor = palette.accent.withAlphaComponent(0.1).cgColor
+        button.contentTintColor = palette.accent
         if let padded = button as? PaddedButton {
             padded.contentInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
+        }
+    }
+
+    @objc private func exportWords() {
+        let fragments = SavedFragmentStore.shared.load()
+        guard !fragments.isEmpty else {
+            showExportAlert(message: "No words to export", info: "Save some translations first.")
+            return
+        }
+
+        // Tab-separated format (works for both Anki and Quizlet)
+        // Format: original<tab>translation per line
+        let content = fragments.map { fragment in
+            let term = fragment.originalText.replacingOccurrences(of: "\t", with: " ")
+            let definition = fragment.translationText.replacingOccurrences(of: "\t", with: " ")
+            return "\(term)\t\(definition)"
+        }.joined(separator: "\n")
+
+        saveFile(content: content, defaultName: "flungus_export.txt", fileType: "txt")
+    }
+
+    private func saveFile(content: String, defaultName: String, fileType: String) {
+        let savePanel = NSSavePanel()
+        savePanel.nameFieldStringValue = defaultName
+        savePanel.allowedContentTypes = [.plainText]
+        savePanel.canCreateDirectories = true
+
+        savePanel.beginSheetModal(for: window!) { response in
+            guard response == .OK, let url = savePanel.url else { return }
+
+            do {
+                try content.write(to: url, atomically: true, encoding: .utf8)
+                self.showExportAlert(message: "Export Successful", info: "File saved to \(url.lastPathComponent)")
+            } catch {
+                self.showExportAlert(message: "Export Failed", info: error.localizedDescription)
+            }
+        }
+    }
+
+    private func showExportAlert(message: String, info: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = info
+        alert.addButton(withTitle: "OK")
+        if let window = window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
         }
     }
 }
@@ -430,11 +492,16 @@ final class SavedWordRowView: NSView {
         }
         trackingArea = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInActiveApp],
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
         addTrackingArea(trackingArea!)
+    }
+
+    func resetHoverState() {
+        layer?.backgroundColor = NSColor(calibratedWhite: 0.96, alpha: 1).cgColor
+        deleteButton.alphaValue = 0
     }
 
     override func mouseEntered(with event: NSEvent) {
