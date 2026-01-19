@@ -5,6 +5,7 @@ final class StatusBarController: NSObject {
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private let toggleItem = NSMenuItem(title: "Hide Panel", action: #selector(togglePanel), keyEquivalent: "h")
+    private let savedWordsItem = NSMenuItem(title: "Saved Words", action: #selector(showSavedWords), keyEquivalent: "")
     private let removeElevenLabsTokenItem = NSMenuItem(title: "Remove ElevenLabs Token", action: #selector(removeElevenLabsToken), keyEquivalent: "")
     private let removeOpenAITokenItem = NSMenuItem(title: "Remove OpenAI Token", action: #selector(removeOpenAIToken), keyEquivalent: "")
     private let removeAllTokensItem = NSMenuItem(title: "Remove All Tokens", action: #selector(removeAllTokens), keyEquivalent: "")
@@ -28,6 +29,7 @@ final class StatusBarController: NSObject {
         }
 
         toggleItem.target = self
+        savedWordsItem.target = self
         removeElevenLabsTokenItem.target = self
         removeOpenAITokenItem.target = self
         removeAllTokensItem.target = self
@@ -36,6 +38,7 @@ final class StatusBarController: NSObject {
         menu.delegate = self
         menu.autoenablesItems = false
         menu.addItem(toggleItem)
+        menu.addItem(savedWordsItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(removeElevenLabsTokenItem)
         menu.addItem(removeOpenAITokenItem)
@@ -63,6 +66,10 @@ final class StatusBarController: NSObject {
     @objc private func quitApp() {
         transcription.stopListening()
         NSApplication.shared.terminate(nil)
+    }
+
+    @objc private func showSavedWords() {
+        SavedWordsCoordinator.shared.showWindow()
     }
 
     private func updateToggleTitle() {
