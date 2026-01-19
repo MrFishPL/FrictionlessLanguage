@@ -411,6 +411,8 @@ final class NotchView: NSView {
         if shouldResumePlayback, !isMouseInsidePanel(for: event) {
             sendPlayPauseKey()
             shouldResumePlayback = false
+            waveformView.setFrozen(false)
+            hoverChangedHandler?(false)
         }
         if isDraggingPanel {
             endPanelDrag()

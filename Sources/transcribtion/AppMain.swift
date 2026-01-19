@@ -17,14 +17,14 @@ struct FlungusApp {
         let panel = NotchPanel(frame: NSRect(origin: origin, size: panelSize))
         let notchView = NotchView(frame: NSRect(origin: .zero, size: panelSize))
         panel.contentView = notchView
-        panel.makeKeyAndOrderFront(nil)
 
         let translator = TranslationController()
         notchView.translationHandler = { fragment, context, completion in
+            let targetLanguage = EnvLoader.loadTargetLanguage() ?? AppConfig.defaultTargetLanguage
             translator.translate(
                 fragment: fragment,
                 context: context,
-                targetLanguage: AppConfig.targetLanguage,
+                targetLanguage: targetLanguage,
                 completion: completion
             )
         }
@@ -36,20 +36,34 @@ struct FlungusApp {
         let statusBar = StatusBarController(panel: panel, transcription: transcription, translator: translator)
         _ = statusBar
 
-        requestKeysAndStart(transcription: transcription, translator: translator)
+        requestKeysAndStart(transcription: transcription, translator: translator, panel: panel)
 
         app.run()
     }
 
     private static func requestKeysAndStart(
         transcription: TranscriptionController,
-        translator: TranslationController
+        translator: TranslationController,
+        panel: NSPanel
     ) {
-        transcription.requestApiKeyIfNeeded { success in
-            guard success else { return }
-            translator.requestApiKeyIfNeeded { translatorSuccess in
-                guard translatorSuccess else { return }
-                transcription.start()
+        ApiKeySetupCoordinator.shared.ensureKeys(required: .all) { success in
+            guard success else {
+                NSApplication.shared.terminate(nil)
+                return
+            }
+            transcription.requestApiKeyIfNeeded { transcriptionSuccess in
+                guard transcriptionSuccess else {
+                    NSApplication.shared.terminate(nil)
+                    return
+                }
+                translator.requestApiKeyIfNeeded { translatorSuccess in
+                    guard translatorSuccess else {
+                        NSApplication.shared.terminate(nil)
+                        return
+                    }
+                    panel.makeKeyAndOrderFront(nil)
+                    transcription.start()
+                }
             }
         }
     }

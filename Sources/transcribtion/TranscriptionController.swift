@@ -47,15 +47,13 @@ final class TranscriptionController {
             return
         }
 
-        presentTokenPrompt { [weak self] token in
+        ApiKeySetupCoordinator.shared.ensureKeys(required: [.elevenLabs]) { [weak self] success in
             guard let self else { return }
-            guard let token, !token.isEmpty else {
-                self.alertMissingTokenAndQuit()
+            guard success, let apiKey = EnvLoader.loadApiKey(), !apiKey.isEmpty else {
                 completion(false)
                 return
             }
-            EnvLoader.saveApiKey(token)
-            self.apiKey = token
+            self.apiKey = apiKey
             completion(true)
         }
     }
@@ -341,35 +339,5 @@ final class TranscriptionController {
         }
     }
 
-    func presentTokenPrompt(completion: @escaping (String?) -> Void) {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Enter ElevenLabs API Key"
-            alert.informativeText = "This key is saved locally for Flungus."
-            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-            field.placeholderString = "ELEVENLABS_API_KEY"
-            alert.accessoryView = field
-            alert.addButton(withTitle: "Save")
-            alert.addButton(withTitle: "Cancel")
-
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                completion(value.isEmpty ? nil : value)
-            } else {
-                completion(nil)
-            }
-        }
-    }
-
-    private func alertMissingTokenAndQuit() {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Token Required"
-            alert.informativeText = "Please set your ElevenLabs API key to use Flungus."
-            alert.addButton(withTitle: "Quit")
-            alert.runModal()
-            NSApplication.shared.terminate(nil)
-        }
-    }
+    // API key setup handled by SetupWindowController.
 }
