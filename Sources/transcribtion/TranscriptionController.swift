@@ -20,6 +20,14 @@ final class TranscriptionController {
     private var uiUpdatesPaused = false
     private var pendingDisplayText: String?
 
+    // Reconnection and heartbeat state
+    private var lastMessageTime: Date?
+    private var pingTimer: DispatchSourceTimer?
+    private var reconnectAttempts = 0
+    private let maxReconnectAttempts = 5
+    private let pingInterval: TimeInterval = 15
+    private let messageTimeout: TimeInterval = 30
+
     private let targetSampleRate: Double = 16_000
     private let targetChannels: AVAudioChannelCount = 1
 
@@ -71,9 +79,11 @@ final class TranscriptionController {
         guard isListening else { return }
         isListening = false
         isSessionReady = false
+        stopPingTimer()
         stopAudioCapture()
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
+        reconnectAttempts = 0
         updateUI("Paused")
     }
 
@@ -100,6 +110,12 @@ final class TranscriptionController {
     }
 
     private func connectWebSocket(apiKey: String) {
+        // Clean up existing connection if any
+        stopPingTimer()
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        isSessionReady = false
+
         let baseURL = "wss://api.elevenlabs.io/v1/speech-to-text/realtime"
         let query = [
             "model_id=scribe_v2_realtime",
@@ -120,19 +136,25 @@ final class TranscriptionController {
         let session = URLSession(configuration: .default)
         let task = session.webSocketTask(with: request)
         webSocket = task
+        lastMessageTime = Date()
         task.resume()
 
         receiveMessages()
+        startPingTimer()
     }
 
     private func receiveMessages() {
         guard isListening, let webSocket else { return }
         webSocket.receive { [weak self] result in
-            guard let self else { return }
+            guard let self, self.isListening else { return }
             switch result {
             case .failure(let error):
                 self.logError("WebSocket error: \(error.localizedDescription)")
+                self.handleWebSocketDisconnect()
+                return
             case .success(let message):
+                self.lastMessageTime = Date()
+                self.reconnectAttempts = 0
                 switch message {
                 case .data(let data):
                     self.handleMessageData(data)
@@ -318,6 +340,72 @@ final class TranscriptionController {
         }
         DispatchQueue.main.async { [weak self] in
             self?.notchView.setText(text)
+        }
+    }
+
+    private func startPingTimer() {
+        stopPingTimer()
+
+        let timer = DispatchSource.makeTimerSource(queue: sendQueue)
+        timer.schedule(deadline: .now() + pingInterval, repeating: pingInterval)
+        timer.setEventHandler { [weak self] in
+            self?.performPingAndCheckTimeout()
+        }
+        timer.resume()
+        pingTimer = timer
+    }
+
+    private func stopPingTimer() {
+        pingTimer?.cancel()
+        pingTimer = nil
+    }
+
+    private func performPingAndCheckTimeout() {
+        guard isListening, let webSocket else { return }
+
+        // Check if we've received any messages recently
+        if let lastTime = lastMessageTime, Date().timeIntervalSince(lastTime) > messageTimeout {
+            logError("WebSocket timeout - no messages received for \(messageTimeout)s")
+            DispatchQueue.main.async { [weak self] in
+                self?.handleWebSocketDisconnect()
+            }
+            return
+        }
+
+        // Send a ping to keep the connection alive
+        webSocket.sendPing { [weak self] error in
+            if let error {
+                self?.logError("Ping failed: \(error.localizedDescription)")
+                DispatchQueue.main.async { [weak self] in
+                    self?.handleWebSocketDisconnect()
+                }
+            }
+        }
+    }
+
+    private func handleWebSocketDisconnect() {
+        guard isListening else { return }
+
+        stopPingTimer()
+        isSessionReady = false
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+
+        guard reconnectAttempts < maxReconnectAttempts else {
+            logError("Max reconnection attempts reached (\(maxReconnectAttempts))")
+            updateUI("Connection lost. Pausing...")
+            stopListening()
+            return
+        }
+
+        reconnectAttempts += 1
+        let delay = min(pow(2.0, Double(reconnectAttempts)), 30.0) // Exponential backoff, max 30s
+        logError("Reconnecting in \(delay)s (attempt \(reconnectAttempts)/\(maxReconnectAttempts))")
+        updateUI("Reconnecting...")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.isListening, let apiKey = self.apiKey else { return }
+            self.connectWebSocket(apiKey: apiKey)
         }
     }
 
