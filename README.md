@@ -1,11 +1,6 @@
-<div>
-    <a href="https://www.loom.com/share/007c18efd03945caa9416f26d644531a">
-      <p>Introducing My New App for Podcast Translation and Vocabulary</p>
-    </a>
-    <a href="https://www.loom.com/share/007c18efd03945caa9416f26d644531a">
-      <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/007c18efd03945caa9416f26d644531a-04f52773140939f2-full-play.gif#t=0.1">
-    </a>
-  </div>
+<video width="640" height="480" controls>
+  <source src="demo.mp4" type="video/mp4">
+</video>
 
 # Flungus 🍄
 
