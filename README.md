@@ -1,11 +1,11 @@
 <div>
-    <a href="https://www.loom.com/share/4bc1e6b1ad334c0aaeb53dac6286c6b1">
-      <p>Revolutionizing Language Learning with a New App! 🌍 - Watch Video</p>
+    <a href="https://www.loom.com/share/007c18efd03945caa9416f26d644531a">
+      <p>Introducing My New App for Podcast Translation and Vocabulary</p>
     </a>
-    <a href="https://www.loom.com/share/4bc1e6b1ad334c0aaeb53dac6286c6b1">
-      <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/4bc1e6b1ad334c0aaeb53dac6286c6b1-3ccdb96364e157bb-full-play.gif#t=0.1">
+    <a href="https://www.loom.com/share/007c18efd03945caa9416f26d644531a">
+      <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/007c18efd03945caa9416f26d644531a-04f52773140939f2-full-play.gif#t=0.1">
     </a>
-</div>
+  </div>
 
 # Flungus 🍄
 
@@ -30,11 +30,3 @@ Flungus is a macOS 14.4+ menu bar app that captures system audio, streams it to 
    ```
 2. Run it from Xcode or your preferred workflow.
 3. Enter API keys when prompted.
-
-## Configuration
-- Target translation language is currently hardcoded in `Sources/transcribtion/AppConfig.swift`.
-- API keys are stored in user defaults and can be set/removed from the status bar menu.
-
-## TODO
-1. Do not pause if already paused
-2. Improve the prompt
