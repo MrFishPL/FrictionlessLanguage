@@ -24,6 +24,7 @@ final class TranscriptionController {
     private var lastMessageTime: Date?
     private var pingTimer: DispatchSourceTimer?
     private var reconnectAttempts = 0
+    private var isReconnecting = false
     private let maxReconnectAttempts = 5
     private let pingInterval: TimeInterval = 15
     private let messageTimeout: TimeInterval = 30
@@ -79,6 +80,7 @@ final class TranscriptionController {
         guard isListening else { return }
         isListening = false
         isSessionReady = false
+        isReconnecting = false
         stopPingTimer()
         stopAudioCapture()
         webSocket?.cancel(with: .goingAway, reason: nil)
@@ -115,6 +117,7 @@ final class TranscriptionController {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         isSessionReady = false
+        isReconnecting = false
 
         let baseURL = "wss://api.elevenlabs.io/v1/speech-to-text/realtime"
         let query = [
@@ -384,7 +387,8 @@ final class TranscriptionController {
     }
 
     private func handleWebSocketDisconnect() {
-        guard isListening else { return }
+        // Prevent multiple concurrent reconnection attempts
+        guard isListening, !isReconnecting else { return }
 
         stopPingTimer()
         isSessionReady = false
@@ -398,13 +402,14 @@ final class TranscriptionController {
             return
         }
 
+        isReconnecting = true
         reconnectAttempts += 1
         let delay = min(pow(2.0, Double(reconnectAttempts)), 30.0) // Exponential backoff, max 30s
         logError("Reconnecting in \(delay)s (attempt \(reconnectAttempts)/\(maxReconnectAttempts))")
         updateUI("Reconnecting...")
 
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.isListening, let apiKey = self.apiKey else { return }
+            guard let self, self.isListening, self.isReconnecting, let apiKey = self.apiKey else { return }
             self.connectWebSocket(apiKey: apiKey)
         }
     }
